@@ -175,6 +175,49 @@ py -3.12 -m pytest -q
 - OCR 是否能识别一张自动生成的测试图片。
 - Hermes 是否能显示版本、配置文件路径，以及能否用 Hermes 全局配置完成最小调用。
 
+### 公司网络下的 OCR 模型下载
+
+PaddleOCR 首次运行会下载模型，不是只安装 Python 包。需要能访问下面任意一个模型源：
+
+```text
+https://huggingface.co
+https://modelscope.cn
+https://aistudio.baidu.com
+https://paddle-model-ecology.bj.bcebos.com
+```
+
+国内公司网络建议优先试 ModelScope 或百度 BOS。在当前 PowerShell 临时设置：
+
+```powershell
+$env:PADDLE_PDX_MODEL_SOURCE="modelscope"
+$env:PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK="True"
+.\scripts\doctor.ps1
+```
+
+如果公司必须走代理，把代理也加上：
+
+```powershell
+$env:HTTP_PROXY="http://公司代理地址:端口"
+$env:HTTPS_PROXY="http://公司代理地址:端口"
+$env:PADDLE_PDX_MODEL_SOURCE="modelscope"
+$env:PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK="True"
+.\scripts\doctor.ps1
+```
+
+如果代理需要账号密码，格式通常是：
+
+```text
+http://用户名:密码@公司代理地址:端口
+```
+
+这些配置也可以写进本项目 `.env`，但不要把带账号密码的 `.env` 上传 GitHub。模型下载成功后会缓存到：
+
+```text
+C:\Users\你的用户名\.paddlex\official_models
+```
+
+没有外网时，也可以从已下载成功的电脑复制这个目录到公司电脑同一路径。
+
 ## 七、启动网页
 
 ```powershell

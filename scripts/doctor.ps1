@@ -44,24 +44,13 @@ for name in packages:
 
 Write-Host "`n== Hermes =="
 $hermesCommand = if ($env:HERMES_COMMAND) { $env:HERMES_COMMAND } else { "hermes" }
-$hermesArgs = @()
-if ($env:HERMES_PROVIDER) {
-  $hermesArgs += @("--provider", $env:HERMES_PROVIDER)
-}
-if ($env:HERMES_MODEL) {
-  $hermesArgs += @("-m", $env:HERMES_MODEL)
-}
 & $hermesCommand --version
 Write-Host "Hermes config path:"
 & $hermesCommand config path
 Write-Host "Hermes env path:"
 & $hermesCommand config env-path
-Write-Host ("Hermes review command: {0} {1} -z <prompt>" -f $hermesCommand, ($hermesArgs -join " "))
-if ($env:DEEPSEEK_API_KEY) {
-  & $hermesCommand @hermesArgs -z "Please only output: Hermes DeepSeek config OK."
-} else {
-  Write-Host "skip Hermes DeepSeek smoke test: DEEPSEEK_API_KEY is empty in .env"
-}
+Write-Host ("Hermes review command: {0} -z <prompt>" -f $hermesCommand)
+& $hermesCommand -z "Please only output: Hermes config OK."
 
 Write-Host "`n== PDF extraction smoke test =="
 @'

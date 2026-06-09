@@ -33,17 +33,8 @@ def run_hermes_prompt(
     prompt: str,
     workdir: Path,
 ) -> HermesResult:
-    parts = _command_parts(settings.hermes_command)
-    if settings.hermes_provider:
-        parts.extend(["--provider", settings.hermes_provider])
-    if settings.hermes_model:
-        parts.extend(["-m", settings.hermes_model])
-    parts.extend(["-z", prompt])
+    parts = [*_command_parts(settings.hermes_command), "-z", prompt]
     env = os.environ.copy()
-    if settings.deepseek_api_key:
-        env["DEEPSEEK_API_KEY"] = settings.deepseek_api_key
-    if settings.deepseek_base_url:
-        env["DEEPSEEK_BASE_URL"] = settings.deepseek_base_url
     completed = subprocess.run(
         parts,
         cwd=workdir,
@@ -55,8 +46,7 @@ def run_hermes_prompt(
         timeout=settings.hermes_timeout_seconds,
         check=False,
     )
-    display_parts = parts[:-1] + ["<prompt>"]
-    display = " ".join(display_parts)
+    display = " ".join([parts[0], "-z", "<prompt>"])
     return HermesResult(
         ok=completed.returncode == 0 and bool(completed.stdout.strip()),
         stdout=completed.stdout.strip(),

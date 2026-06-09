@@ -5,7 +5,7 @@ from bid_agent.config import Settings
 from bid_agent.hermes import run_hermes_prompt
 
 
-def test_run_hermes_prompt_passes_provider_and_model(tmp_path: Path, monkeypatch):
+def test_run_hermes_prompt_uses_hermes_cli_config_by_default(tmp_path: Path, monkeypatch):
     captured = {}
 
     def fake_run(parts, **kwargs):
@@ -23,10 +23,6 @@ def test_run_hermes_prompt_passes_provider_and_model(tmp_path: Path, monkeypatch
         reports_dir=tmp_path / "reports",
         database_url=f"sqlite:///{tmp_path / 'storage' / 'app.db'}",
         hermes_command="hermes",
-        hermes_provider="deepseek",
-        hermes_model="deepseek-v4-pro",
-        deepseek_api_key="secret-key",
-        deepseek_base_url="https://api.deepseek.com/anthropic",
         ocr_enabled=False,
         ocr_language="ch",
         hermes_timeout_seconds=5,
@@ -36,14 +32,8 @@ def test_run_hermes_prompt_passes_provider_and_model(tmp_path: Path, monkeypatch
 
     assert captured["parts"] == [
         "hermes",
-        "--provider",
-        "deepseek",
-        "-m",
-        "deepseek-v4-pro",
         "-z",
         "hello",
     ]
-    assert captured["env"]["DEEPSEEK_API_KEY"] == "secret-key"
-    assert captured["env"]["DEEPSEEK_BASE_URL"] == "https://api.deepseek.com/anthropic"
     assert result.ok is True
-    assert result.command_display == "hermes --provider deepseek -m deepseek-v4-pro -z <prompt>"
+    assert result.command_display == "hermes -z <prompt>"

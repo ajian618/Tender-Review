@@ -75,9 +75,14 @@ img = Image.new("RGB", (420, 120), "white")
 draw = ImageDraw.Draw(img)
 draw.text((20, 35), "SAMPLE CERT 12345", fill="black")
 img.save(path)
-text = OcrEngine("ch").image_to_text(path)
-print(f"ocr text: {text}")
-assert "12345" in text
+try:
+    text = OcrEngine("ch").image_to_text(path)
+    print(f"ocr text: {text}")
+    assert "12345" in text
+except Exception as exc:
+    print("ocr smoke test failed.")
+    print("reason:", exc)
+    print("If this computer cannot reach PaddleOCR model hosts, download/cache the OCR models first, or set OCR_ENABLED=false in .env for text-only PDF/DOCX/XLSX testing.")
 '@ | & $python @argsPrefix -
 
 Write-Host "`n== App health =="

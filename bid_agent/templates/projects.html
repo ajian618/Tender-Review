@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}项目 | 标书预审{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>项目</h1>
+    <p>{{ projects|length }} 个项目</p>
+  </div>
+  <form class="inline-form" method="post" action="/projects">
+    <input name="name" placeholder="项目名称" required>
+    <input name="owner" placeholder="负责人">
+    <button class="primary" type="submit">新建项目</button>
+  </form>
+</section>
+
+<section class="grid two">
+  <div>
+    <h2>项目列表</h2>
+    <div class="item-list">
+      {% for project in projects %}
+      <a class="item-card" href="/projects/{{ project.id }}">
+        <span class="item-title">{{ project.name }}</span>
+        <span class="item-meta">{{ project.document_count }} 份文件 · {{ project.job_count }} 次评审 · {{ project.updated_at }}</span>
+      </a>
+      {% else %}
+      <p class="empty">暂无项目</p>
+      {% endfor %}
+    </div>
+  </div>
+  <div>
+    <h2>最近任务</h2>
+    <table>
+      <thead>
+        <tr><th>任务</th><th>次数</th><th>状态</th><th>时间</th></tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td><a href="/jobs/{{ job.id }}">{{ job.project_name }}</a></td>
+          <td>第 {{ job.review_no }} 次</td>
+          <td><span class="status {{ job.status }}">{{ job.status }}</span></td>
+          <td>{{ job.updated_at }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="empty">暂无任务</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

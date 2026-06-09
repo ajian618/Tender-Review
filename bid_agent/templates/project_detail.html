@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} | 标书预审{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>{{ project.name }}</h1>
+    <p>{{ project.owner or "未设置负责人" }} · {{ project.status }}</p>
+  </div>
+  <form method="post" action="/projects/{{ project.id }}/review">
+    <button class="primary" type="submit">启动 Hermes 预审</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>上传文件</h2>
+  <form class="upload-form" method="post" action="/projects/{{ project.id }}/documents" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <select name="category">
+      {% for value, label in categories %}
+      <option value="{{ value }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input name="title" placeholder="显示名称">
+    <button type="submit">入库</button>
+  </form>
+</section>
+
+<section class="grid two">
+  <div>
+    <h2>项目文件</h2>
+    <table>
+      <thead>
+        <tr><th>名称</th><th>类型</th><th>抽取</th><th>OCR</th><th>操作</th></tr>
+      </thead>
+      <tbody>
+        {% for doc in documents %}
+        <tr>
+          <td><a href="/documents/{{ doc.id }}">{{ doc.title }}</a></td>
+          <td>{{ doc.category }}</td>
+          <td><span class="status {{ doc.extraction_status }}">{{ doc.extraction_status }}</span></td>
+          <td>{{ doc.ocr_status }}</td>
+          <td>
+            <form method="post" action="/documents/{{ doc.id }}/reextract">
+              <button type="submit">重新抽取</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">暂无文件</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div>
+    <h2>评审任务</h2>
+    <table>
+      <thead>
+        <tr><th>次数</th><th>任务</th><th>状态</th><th>更新时间</th></tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td>第 {{ job.review_no }} 次</td>
+          <td><a href="/jobs/{{ job.id }}">{{ job.title }}</a></td>
+          <td><span class="status {{ job.status }}">{{ job.status }}</span></td>
+          <td>{{ job.updated_at }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="empty">暂无任务</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

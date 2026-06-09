@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ document.title }} | 标书预审{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>{{ document.title }}</h1>
+    <p>{{ document.category }} · {{ document.original_filename }}</p>
+  </div>
+  <div class="actions">
+    <form method="post" action="/documents/{{ document.id }}/reextract">
+      <button type="submit">重新抽取</button>
+    </form>
+    <a class="button" href="/documents">返回资料库</a>
+  </div>
+</section>
+
+{% if document.error_message %}
+<section class="notice warning">
+  {{ document.error_message }}
+</section>
+{% endif %}
+
+<section class="stats">
+  <div><span>抽取</span><strong>{{ document.extraction_status }}</strong></div>
+  <div><span>OCR</span><strong>{{ document.ocr_status }}</strong></div>
+  <div><span>大小</span><strong>{{ document.byte_size }}</strong></div>
+  <div><span>SHA256</span><strong>{{ document.sha256[:12] }}</strong></div>
+</section>
+
+<section class="panel">
+  <h2>文本片段</h2>
+  {% for chunk in chunks %}
+  <article class="chunk">
+    <header>
+      {% if chunk.page_number %}PDF page {{ chunk.page_number }}{% elif chunk.sheet_name %}{{ chunk.sheet_name }}{% else %}chunk {{ chunk.chunk_index }}{% endif %}
+    </header>
+    <pre>{{ chunk.text }}</pre>
+  </article>
+  {% else %}
+  <p class="empty">暂无抽取文本</p>
+  {% endfor %}
+</section>
+{% endblock %}

@@ -1,0 +1,52 @@
+# Secrets and local configuration
+.env
+APIKEY.txt
+*.key
+*.pem
+
+# Real bid/proposal/customer documents
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.xlsm
+*.ppt
+*.pptx
+*.zip
+*.rar
+*.7z
+
+# Keep intentionally fake text samples
+!sample_data/
+!sample_data/**
+
+# Local generated data
+storage/
+*.db
+*.sqlite
+*.sqlite3
+logs/
+reports/
+extracted/
+
+# Existing local proof-of-concept with real files
+hermes-bid-eval-mvp/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.playwright-cli/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

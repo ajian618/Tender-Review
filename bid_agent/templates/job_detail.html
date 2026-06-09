@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}任务 {{ job.id }} | 标书预审{% endblock %}
+{% block head %}
+{% if job.status in ["queued", "running"] %}
+<meta http-equiv="refresh" content="4">
+{% endif %}
+{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>{{ job.title }}</h1>
+    <p>{{ job.project_name }} · 第 {{ job.review_no }} 次 · <span class="status {{ job.status }}">{{ job.status }}</span></p>
+  </div>
+  <div class="actions">
+    {% if report_dir %}
+    <form method="post" action="/jobs/{{ job.id }}/open-report-folder">
+      <button type="submit">打开报告目录</button>
+    </form>
+    {% endif %}
+    <a class="button" href="/projects/{{ job.project_id }}">返回项目</a>
+  </div>
+</section>
+
+{% if job.error_message %}
+<section class="notice warning">
+  {{ job.error_message }}
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>预审报告</h2>
+  {% if report_text %}
+  {% if report_dir %}
+  <p class="path-line">报告目录：{{ report_dir }}</p>
+  {% endif %}
+  <pre class="report">{{ report_text }}</pre>
+  {% else %}
+  <p class="empty">报告生成中</p>
+  {% endif %}
+</section>
+
+<section class="grid two">
+  <div class="panel">
+    <h2>运行日志</h2>
+    <pre class="log">{{ job.log_text }}</pre>
+  </div>
+  <div class="panel">
+    <h2>产物</h2>
+    <table>
+      <thead><tr><th>类型</th><th>标题</th><th>路径</th></tr></thead>
+      <tbody>
+      {% for artifact in artifacts %}
+      <tr><td>{{ artifact.artifact_type }}</td><td>{{ artifact.title }}</td><td>{{ artifact.stored_path }}</td></tr>
+      {% else %}
+      <tr><td colspan="3" class="empty">暂无产物</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if prompt_text %}
+<section class="panel">
+  <h2>Hermes Prompt</h2>
+  <pre class="log">{{ prompt_text }}</pre>
+</section>
+{% endif %}
+{% endblock %}

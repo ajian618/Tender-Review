@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}标书预审{% endblock %}</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">标书预审</a>
+      <nav class="nav">
+        <a href="/">项目</a>
+        <a href="/documents">资料库</a>
+        <a href="/logout">退出</a>
+      </nav>
+    </header>
+    <main class="page">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

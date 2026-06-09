@@ -62,6 +62,11 @@ py -3.12 -m pip install -r requirements.txt
 
 ## 四、配置系统
 
+这里有两层配置，不要混在一起：
+
+- Hermes 自己的全局配置：决定你在 PowerShell 里直接运行 `hermes` 时默认用哪个模型。
+- 本项目的 `.env`：决定网页系统的登录密码、资料目录，以及调用 Hermes 子进程时传入的 provider/model/API key。
+
 复制配置模板：
 
 ```powershell
@@ -77,19 +82,84 @@ SESSION_SECRET=随便生成一串长随机字符
 DEEPSEEK_API_KEY=你的DeepSeek密钥
 DEEPSEEK_BASE_URL=https://api.deepseek.com/anthropic
 HERMES_COMMAND=hermes
+HERMES_PROVIDER=deepseek
+HERMES_MODEL=deepseek-v4-pro
 OCR_ENABLED=true
 REPORTS_DIR=reports
 ```
 
-如果 `hermes` 命令不在 PATH，就把 `HERMES_COMMAND` 改成完整路径。
+如果 `hermes` 命令不在 PATH，就把 `HERMES_COMMAND` 改成完整路径，例如：
 
-## 五、安装并验证 Hermes Agent
+```text
+HERMES_COMMAND=C:\Users\你的用户名\AppData\Local\hermes\hermes-agent\venv\Scripts\hermes.exe
+```
 
-按 Hermes 官方 Windows 原生安装文档安装。安装后新开 PowerShell，验证：
+`.env` 会被本项目读取，并在调用 Hermes 时传给子进程。它不会自动修改 Hermes 的全局默认配置。
+
+## 五、安装并配置 Hermes Agent
+
+按 Hermes 官方 Windows 原生安装文档安装。安装后新开 PowerShell，先验证命令是否可用：
 
 ```powershell
 hermes --version
-hermes -z "请只输出：Hermes Windows 原生运行正常。"
+```
+
+然后配置 DeepSeek。推荐先走官方交互式配置：
+
+```powershell
+hermes setup
+```
+
+配置时按这个选：
+
+```text
+Setup 模式：Quick Setup
+Model provider：DeepSeek
+API Key：填你的 DeepSeek API Key
+Base URL：https://api.deepseek.com
+Model：deepseek-v4-pro
+```
+
+注意：DeepSeek 官方集成页在 setup 向导里写的是 Base URL 填 `https://api.deepseek.com`。如果 Hermes 配置文件最终显示为 `https://api.deepseek.com/anthropic` 加 `api_mode: "anthropic_messages"`，这也是当前本机已验证通过的形态。
+
+如果已经装完 Hermes，但它还是默认配置，可以重新运行：
+
+```powershell
+hermes model
+```
+
+或者直接查看和编辑配置文件：
+
+```powershell
+hermes config path
+hermes config env-path
+hermes config show
+hermes config edit
+```
+
+Windows 原生安装时，常见路径是：
+
+```text
+C:\Users\你的用户名\AppData\Local\hermes\config.yaml
+C:\Users\你的用户名\AppData\Local\hermes\.env
+```
+
+当前已验证过的 DeepSeek 配置形态大致应包含：
+
+```yaml
+model:
+  default: "deepseek-v4-pro"
+  provider: "deepseek"
+  base_url: "https://api.deepseek.com/anthropic"
+  api_mode: "anthropic_messages"
+```
+
+密钥不要写进 `config.yaml`，放到 Hermes 的 `.env` 或本项目 `.env` 里。本项目启动评审时会从项目 `.env` 读取 `DEEPSEEK_API_KEY`，并把它传给 Hermes 子进程。
+
+最后做 DeepSeek 最小验证：
+
+```powershell
+hermes --provider deepseek -m deepseek-v4-pro -z "请只输出：Hermes DeepSeek 配置正常。"
 ```
 
 如果这里不通，网页系统也不能完成 Hermes 预审，只能完成文件抽取和资料库检索。
@@ -107,7 +177,7 @@ py -3.12 -m pytest -q
 - PDF、Word、Excel、OCR 依赖是否存在。
 - 当前目录 PDF 是否能抽出文本。
 - OCR 是否能识别一张自动生成的测试图片。
-- Hermes 是否能显示版本。
+- Hermes 是否能显示版本、配置文件路径，以及能否用 `.env` 里的 DeepSeek 配置完成最小调用。
 
 ## 七、启动网页
 
@@ -173,7 +243,7 @@ reports/002_台州市椒江区项目/
 - `bid_agent/db.py`：SQLite 表、文件元数据、文本片段、FTS/LIKE 检索。
 - `bid_agent/extractors.py`：PDF、Word、Excel、TXT、图片和 OCR 抽取。
 - `bid_agent/document_service.py`：文件保存、抽取、重新抽取、写入检索库。
-- `bid_agent/hermes.py`：生成 Hermes Prompt，调用 `hermes -z`。
+- `bid_agent/hermes.py`：生成 Hermes Prompt，调用 `hermes --provider deepseek -m deepseek-v4-pro -z <prompt>`。provider/model 来自 `.env` 的 `HERMES_PROVIDER` 和 `HERMES_MODEL`。
 - `bid_agent/review.py`：评审任务编排，保存 Prompt 和报告。
 - `bid_agent/templates/`：网页模板。
 - `sample_data/`：可上传测试的假样例，不含真实标书。
@@ -197,3 +267,21 @@ git check-ignore hermes-bid-eval-mvp/tender.pdf
 - OCR 已在本机用 PaddleOCR 测试图片验证通过，首次运行会下载模型，比较慢。
 - 商务报价缺少必要参数时报告必须写“无法计算”，不能编造分数。
 - 证书真伪、信用状态、资质动态核查仍需人工或外部系统确认。
+
+## 十三、关于“养”这个智能体
+
+Hermes 官方宣传的自我学习，主要指它自己的记忆、技能和偏好会随使用积累。但本项目第一版不是让 Hermes 直接长期自由操作公司资料库，而是把 Hermes 当成一个可控的评审执行器：
+
+```text
+网页上传文件 -> 文本抽取/OCR -> SQLite 检索候选证据 -> 生成评审 Prompt -> 调用 Hermes CLI -> 保存 Prompt 和报告
+```
+
+也就是说，当前第一版已经有“可追溯的评审记录”，但还没有真正的“业务反馈闭环”。如果老板说要“养”，下一阶段不建议一上来就做模型微调，应该先做这几件事：
+
+1. 增加人工反馈：每份报告可以标记“正确、错误、缺证据、引用不准、评分口径要改”。
+2. 建立反馈库：把人工修正后的结论、证据和评分口径存进数据库。
+3. 做 Prompt 版本管理：每次改评审规则和提示词都记录版本，能对比新旧效果。
+4. 做标准样例集：保留一批脱敏假标书/历史样例，用来回归测试智能体有没有变好。
+5. 再接 Hermes Skill/Memory：把稳定的评审经验沉淀成 Hermes skills 或项目规则，不让它随意把未经确认的结论写成“经验”。
+
+所以“养”的下一层次不是让模型自己随便学习，而是“人工复核反馈 + 可审计知识库 + 规则版本化 + Hermes 记忆/技能沉淀”。这样才适合公司内部使用。

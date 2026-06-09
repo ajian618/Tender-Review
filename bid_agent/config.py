@@ -34,6 +34,8 @@ class Settings:
     reports_dir: Path
     database_url: str
     hermes_command: str
+    hermes_provider: str | None
+    hermes_model: str | None
     deepseek_api_key: str | None
     deepseek_base_url: str | None
     ocr_enabled: bool
@@ -62,6 +64,8 @@ def get_settings() -> Settings:
         reports_dir=reports_dir,
         database_url=os.getenv("DATABASE_URL", f"sqlite:///{storage_dir / 'app.db'}"),
         hermes_command=os.getenv("HERMES_COMMAND", "hermes"),
+        hermes_provider=os.getenv("HERMES_PROVIDER") or None,
+        hermes_model=os.getenv("HERMES_MODEL") or None,
         deepseek_api_key=os.getenv("DEEPSEEK_API_KEY") or None,
         deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL") or None,
         ocr_enabled=_bool_env("OCR_ENABLED", True),

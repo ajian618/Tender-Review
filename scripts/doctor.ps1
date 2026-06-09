@@ -1,9 +1,24 @@
 $ErrorActionPreference = "Continue"
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [System.Text.Encoding]::UTF8
+$Utf8NoBom = New-Object System.Text.UTF8Encoding -ArgumentList $false
+[Console]::OutputEncoding = $Utf8NoBom
+$OutputEncoding = $Utf8NoBom
 
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
+
+if (Test-Path ".env") {
+  Get-Content ".env" | ForEach-Object {
+    $line = $_.Trim()
+    if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
+      $name, $value = $line.Split("=", 2)
+      $name = $name.Trim()
+      $value = $value.Trim().Trim('"').Trim("'")
+      if ($name -and $value) {
+        [Environment]::SetEnvironmentVariable($name, $value, "Process")
+      }
+    }
+  }
+}
 
 $python = Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"
 if (-not (Test-Path $python)) {
@@ -28,7 +43,25 @@ for name in packages:
 '@ | & $python @argsPrefix -
 
 Write-Host "`n== Hermes =="
-hermes --version
+$hermesCommand = if ($env:HERMES_COMMAND) { $env:HERMES_COMMAND } else { "hermes" }
+$hermesArgs = @()
+if ($env:HERMES_PROVIDER) {
+  $hermesArgs += @("--provider", $env:HERMES_PROVIDER)
+}
+if ($env:HERMES_MODEL) {
+  $hermesArgs += @("-m", $env:HERMES_MODEL)
+}
+& $hermesCommand --version
+Write-Host "Hermes config path:"
+& $hermesCommand config path
+Write-Host "Hermes env path:"
+& $hermesCommand config env-path
+Write-Host ("Hermes review command: {0} {1} -z <prompt>" -f $hermesCommand, ($hermesArgs -join " "))
+if ($env:DEEPSEEK_API_KEY) {
+  & $hermesCommand @hermesArgs -z "Please only output: Hermes DeepSeek config OK."
+} else {
+  Write-Host "skip Hermes DeepSeek smoke test: DEEPSEEK_API_KEY is empty in .env"
+}
 
 Write-Host "`n== PDF extraction smoke test =="
 @'

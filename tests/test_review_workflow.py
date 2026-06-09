@@ -15,6 +15,8 @@ def test_review_workflow_creates_report_with_mocked_hermes(tmp_path: Path, monke
         reports_dir=tmp_path / "reports",
         database_url=f"sqlite:///{tmp_path / 'storage' / 'app.db'}",
         hermes_command="hermes",
+        hermes_provider=None,
+        hermes_model=None,
         deepseek_api_key=None,
         deepseek_base_url=None,
         ocr_enabled=False,

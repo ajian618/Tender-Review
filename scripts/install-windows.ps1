@@ -18,7 +18,7 @@ Write-Host "== Install Python dependencies =="
 
 if (-not (Test-Path ".env")) {
   Copy-Item ".env.example" ".env"
-  Write-Host "Created .env from .env.example. Please edit APP_PASSWORD, SESSION_SECRET, and DEEPSEEK_API_KEY."
+  Write-Host "Created .env from .env.example. Please edit APP_PASSWORD and SESSION_SECRET. Configure DeepSeek with hermes setup or hermes model."
 }
 
 Write-Host "== Verify =="

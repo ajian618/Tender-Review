@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,7 +27,7 @@ def sha256_bytes(data: bytes) -> str:
 
 
 def ensure_storage_dirs(storage_dir: Path) -> None:
-    for name in ("originals", "extracted", "ocr", "reports"):
+    for name in ("originals", "parsed", "parse_json", "reports", "qdrant"):
         (storage_dir / name).mkdir(parents=True, exist_ok=True)
 
 
@@ -65,6 +66,15 @@ def write_text_artifact(storage_dir: Path, subdir: str, filename: str, text: str
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / sanitize_filename(filename)
     target.write_text(text, encoding="utf-8")
+    return target
+
+
+def write_json_artifact(storage_dir: Path, subdir: str, filename: str, payload: object) -> Path:
+    ensure_storage_dirs(storage_dir)
+    target_dir = storage_dir / subdir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / sanitize_filename(filename)
+    target.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     return target
 
 

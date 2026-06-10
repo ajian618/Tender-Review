@@ -7,8 +7,8 @@
     <p>{{ document.category }} · {{ document.original_filename }}</p>
   </div>
   <div class="actions">
-    <form method="post" action="/documents/{{ document.id }}/reextract">
-      <button type="submit">重新抽取</button>
+    <form method="post" action="/documents/{{ document.id }}/reparse">
+      <button type="submit">重新解析</button>
     </form>
     <a class="button" href="/documents">返回资料库</a>
   </div>
@@ -21,23 +21,79 @@
 {% endif %}
 
 <section class="stats">
-  <div><span>抽取</span><strong>{{ document.extraction_status }}</strong></div>
-  <div><span>OCR</span><strong>{{ document.ocr_status }}</strong></div>
+  <div><span>解析状态</span><strong>{{ document.extraction_status }}</strong></div>
+  <div><span>解析引擎</span><strong>{{ document.parser_engine or "pending" }}</strong></div>
+  <div><span>解析策略</span><strong>{{ document.parse_strategy or "pending" }}</strong></div>
+  <div><span>解析页码</span><strong>{{ document.parse_current_page or 0 }} / {{ document.parse_total_pages or 0 }}</strong></div>
+  <div><span>向量索引</span><strong>{{ document.vector_status or "pending" }}</strong></div>
+  <div><span>版面/OCR</span><strong>{{ document.ocr_status }}</strong></div>
   <div><span>大小</span><strong>{{ document.byte_size }}</strong></div>
   <div><span>SHA256</span><strong>{{ document.sha256[:12] }}</strong></div>
 </section>
 
+<section class="panel" data-document-progress="{{ document.id }}">
+  <h2>解析进度</h2>
+  <div class="progress-bar large" aria-label="解析进度">
+    <span data-doc-field="parse_bar" style="width: {{ document.parse_progress or 0 }}%"></span>
+  </div>
+  <p class="path-line" data-doc-field="parse_text">
+    {{ document.parse_progress or 0 }}% · {{ document.parse_stage or "等待解析" }}
+    {% if document.parse_total_pages %}
+    · {{ document.parse_current_page or 0 }}/{{ document.parse_total_pages }} 页
+    {% endif %}
+    {% if document.parse_strategy %}
+    · {{ document.parse_strategy }}
+    {% endif %}
+  </p>
+</section>
+
+{% if document.vector_error %}
+<section class="notice warning">
+  向量索引失败：{{ document.vector_error }}
+</section>
+{% endif %}
+
 <section class="panel">
-  <h2>文本片段</h2>
+  <h2>解析产物</h2>
+  <p>Markdown：{{ document.parsed_markdown_path or "尚未生成" }}</p>
+  <p>JSON：{{ document.parsed_json_path or "尚未生成" }}</p>
+</section>
+
+<section class="panel">
+  <h2>结构化文本片段</h2>
   {% for chunk in chunks %}
   <article class="chunk">
     <header>
-      {% if chunk.page_number %}PDF page {{ chunk.page_number }}{% elif chunk.sheet_name %}{{ chunk.sheet_name }}{% else %}chunk {{ chunk.chunk_index }}{% endif %}
+      {% if chunk.page_number %}page {{ chunk.page_number }}{% elif chunk.sheet_name %}{{ chunk.sheet_name }}{% else %}chunk {{ chunk.chunk_index }}{% endif %}
+      · {{ chunk.block_type or "markdown" }}
     </header>
     <pre>{{ chunk.text }}</pre>
   </article>
   {% else %}
-  <p class="empty">暂无抽取文本</p>
+  <p class="empty">暂无解析文本</p>
   {% endfor %}
 </section>
+<script>
+(() => {
+  const documentId = {{ document.id }};
+  const activeStatuses = new Set(["queued", "running"]);
+
+  async function refreshDocumentStatus() {
+    const response = await fetch(`/api/documents/${documentId}/status`, { cache: "no-store" });
+    if (!response.ok) return;
+    const doc = (await response.json()).document;
+    const bar = document.querySelector('[data-doc-field="parse_bar"]');
+    if (bar) bar.style.width = `${doc.parse_progress || 0}%`;
+    const pages = doc.parse_total_pages ? ` · ${doc.parse_current_page || 0}/${doc.parse_total_pages} 页` : "";
+    const strategy = doc.parse_strategy ? ` · ${doc.parse_strategy}` : "";
+    const text = document.querySelector('[data-doc-field="parse_text"]');
+    if (text) text.textContent = `${doc.parse_progress || 0}% · ${doc.parse_stage || "等待解析"}${pages}${strategy}`;
+    if (activeStatuses.has(doc.extraction_status) || activeStatuses.has(doc.vector_status)) {
+      window.setTimeout(refreshDocumentStatus, 2000);
+    }
+  }
+
+  window.setTimeout(refreshDocumentStatus, 500);
+})();
+</script>
 {% endblock %}

@@ -68,6 +68,19 @@ def init_db(database_path: Path) -> None:
                 mime_type TEXT DEFAULT '',
                 extraction_status TEXT NOT NULL DEFAULT 'pending',
                 ocr_status TEXT NOT NULL DEFAULT 'not_needed',
+                parser_engine TEXT NOT NULL DEFAULT '',
+                parse_strategy TEXT NOT NULL DEFAULT '',
+                parse_stage TEXT NOT NULL DEFAULT '',
+                parse_progress INTEGER NOT NULL DEFAULT 0,
+                parse_current_page INTEGER NOT NULL DEFAULT 0,
+                parse_total_pages INTEGER NOT NULL DEFAULT 0,
+                parse_started_at TEXT,
+                parse_finished_at TEXT,
+                parsed_markdown_path TEXT NOT NULL DEFAULT '',
+                parsed_json_path TEXT NOT NULL DEFAULT '',
+                vector_status TEXT NOT NULL DEFAULT 'pending',
+                vector_error TEXT NOT NULL DEFAULT '',
+                vector_indexed_at TEXT,
                 error_message TEXT DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -80,6 +93,7 @@ def init_db(database_path: Path) -> None:
                 category TEXT NOT NULL,
                 page_number INTEGER,
                 sheet_name TEXT DEFAULT '',
+                block_type TEXT NOT NULL DEFAULT 'markdown',
                 chunk_index INTEGER NOT NULL,
                 text TEXT NOT NULL,
                 created_at TEXT NOT NULL
@@ -101,6 +115,8 @@ def init_db(database_path: Path) -> None:
                 review_no INTEGER NOT NULL DEFAULT 1,
                 status TEXT NOT NULL,
                 title TEXT NOT NULL,
+                stage TEXT NOT NULL DEFAULT '',
+                progress INTEGER NOT NULL DEFAULT 0,
                 log_text TEXT NOT NULL DEFAULT '',
                 error_message TEXT NOT NULL DEFAULT '',
                 started_at TEXT,
@@ -131,6 +147,22 @@ def init_db(database_path: Path) -> None:
             "review_no",
             "INTEGER NOT NULL DEFAULT 1",
         )
+        ensure_column(conn, "review_jobs", "stage", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(conn, "review_jobs", "progress", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "documents", "parser_engine", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(conn, "documents", "parse_strategy", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(conn, "documents", "parse_stage", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(conn, "documents", "parse_progress", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "documents", "parse_current_page", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "documents", "parse_total_pages", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "documents", "parse_started_at", "TEXT")
+        ensure_column(conn, "documents", "parse_finished_at", "TEXT")
+        ensure_column(conn, "documents", "parsed_markdown_path", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(conn, "documents", "parsed_json_path", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(conn, "documents", "vector_status", "TEXT NOT NULL DEFAULT 'pending'")
+        ensure_column(conn, "documents", "vector_error", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(conn, "documents", "vector_indexed_at", "TEXT")
+        ensure_column(conn, "document_chunks", "block_type", "TEXT NOT NULL DEFAULT 'markdown'")
         normalize_review_numbers(conn)
 
 
@@ -251,15 +283,132 @@ def update_document_extraction(
     *,
     extraction_status: str,
     ocr_status: str,
+    parser_engine: str = "",
+    parsed_markdown_path: str = "",
+    parsed_json_path: str = "",
     error_message: str = "",
 ) -> None:
     conn.execute(
         """
         UPDATE documents
-        SET extraction_status = ?, ocr_status = ?, error_message = ?, updated_at = ?
+        SET extraction_status = ?,
+            ocr_status = ?,
+            parser_engine = ?,
+            parse_progress = CASE
+                WHEN ? IN ('completed', 'empty') THEN 100
+                WHEN ? = 'failed' THEN parse_progress
+                ELSE parse_progress
+            END,
+            parse_stage = CASE
+                WHEN ? = 'completed' THEN '解析完成'
+                WHEN ? = 'empty' THEN '未解析出文本'
+                WHEN ? = 'failed' THEN '解析失败'
+                ELSE parse_stage
+            END,
+            parse_finished_at = CASE
+                WHEN ? IN ('completed', 'empty', 'failed') THEN ?
+                ELSE parse_finished_at
+            END,
+            parsed_markdown_path = ?,
+            parsed_json_path = ?,
+            error_message = ?,
+            updated_at = ?
         WHERE id = ?
         """,
-        (extraction_status, ocr_status, error_message, utc_now(), document_id),
+        (
+            extraction_status,
+            ocr_status,
+            parser_engine,
+            extraction_status,
+            extraction_status,
+            extraction_status,
+            extraction_status,
+            extraction_status,
+            extraction_status,
+            utc_now(),
+            parsed_markdown_path,
+            parsed_json_path,
+            error_message,
+            utc_now(),
+            document_id,
+        ),
+    )
+
+
+def update_document_parse_progress(
+    conn: sqlite3.Connection,
+    document_id: int,
+    *,
+    extraction_status: str | None = None,
+    parser_engine: str | None = None,
+    parse_strategy: str | None = None,
+    parse_stage: str | None = None,
+    parse_progress: int | None = None,
+    parse_current_page: int | None = None,
+    parse_total_pages: int | None = None,
+    error_message: str | None = None,
+) -> None:
+    assignments = ["updated_at = ?"]
+    params: list[Any] = [utc_now()]
+    if extraction_status is not None:
+        assignments.append("extraction_status = ?")
+        params.append(extraction_status)
+        if extraction_status == "running":
+            assignments.append("parse_started_at = COALESCE(parse_started_at, ?)")
+            params.append(utc_now())
+        if extraction_status in {"completed", "empty", "failed"}:
+            assignments.append("parse_finished_at = ?")
+            params.append(utc_now())
+    if parser_engine is not None:
+        assignments.append("parser_engine = ?")
+        params.append(parser_engine)
+    if parse_strategy is not None:
+        assignments.append("parse_strategy = ?")
+        params.append(parse_strategy)
+    if parse_stage is not None:
+        assignments.append("parse_stage = ?")
+        params.append(parse_stage)
+    if parse_progress is not None:
+        assignments.append("parse_progress = ?")
+        params.append(max(0, min(100, int(parse_progress))))
+    if parse_current_page is not None:
+        assignments.append("parse_current_page = ?")
+        params.append(max(0, int(parse_current_page)))
+    if parse_total_pages is not None:
+        assignments.append("parse_total_pages = ?")
+        params.append(max(0, int(parse_total_pages)))
+    if error_message is not None:
+        assignments.append("error_message = ?")
+        params.append(error_message)
+    params.append(document_id)
+    conn.execute(
+        f"""
+        UPDATE documents
+        SET {', '.join(assignments)}
+        WHERE id = ?
+        """,
+        tuple(params),
+    )
+
+
+def update_document_vector_status(
+    conn: sqlite3.Connection,
+    document_id: int,
+    *,
+    vector_status: str,
+    vector_error: str = "",
+) -> None:
+    indexed_at = utc_now() if vector_status == "completed" else None
+    conn.execute(
+        """
+        UPDATE documents
+        SET vector_status = ?,
+            vector_error = ?,
+            vector_indexed_at = COALESCE(?, vector_indexed_at),
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (vector_status, vector_error, indexed_at, utc_now(), document_id),
     )
 
 
@@ -326,9 +475,9 @@ def replace_document_chunks(
             """
             INSERT INTO document_chunks (
                 document_id, project_id, category, page_number, sheet_name,
-                chunk_index, text, created_at
+                block_type, chunk_index, text, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 document_id,
@@ -336,6 +485,7 @@ def replace_document_chunks(
                 category,
                 chunk.get("page_number"),
                 chunk.get("sheet_name", ""),
+                chunk.get("block_type", "markdown"),
                 index,
                 text,
                 now,
@@ -392,6 +542,7 @@ def list_project_chunks(
             c.category,
             c.page_number,
             c.sheet_name,
+            c.block_type,
             c.chunk_index,
             c.text,
             d.title,
@@ -434,6 +585,7 @@ def search_chunks(
                 c.category,
                 c.page_number,
                 c.sheet_name,
+                c.block_type,
                 c.chunk_index,
                 c.text,
                 d.title,
@@ -479,6 +631,7 @@ def like_search_chunks(
             c.category,
             c.page_number,
             c.sheet_name,
+            c.block_type,
             c.chunk_index,
             c.text,
             d.title,
@@ -559,6 +712,8 @@ def update_review_job(
     job_id: int,
     *,
     status: str | None = None,
+    stage: str | None = None,
+    progress: int | None = None,
     log_text: str | None = None,
     error_message: str | None = None,
     started_at: str | None = None,
@@ -571,6 +726,8 @@ def update_review_job(
         """
         UPDATE review_jobs
         SET status = ?,
+            stage = ?,
+            progress = ?,
             log_text = ?,
             error_message = ?,
             started_at = COALESCE(?, started_at),
@@ -580,6 +737,8 @@ def update_review_job(
         """,
         (
             status or current["status"],
+            stage if stage is not None else current.get("stage", ""),
+            max(0, min(100, int(progress if progress is not None else current.get("progress", 0)))),
             log_text if log_text is not None else current["log_text"],
             error_message if error_message is not None else current["error_message"],
             started_at,

@@ -20,3 +20,23 @@ def test_create_review_job_increments_review_no_per_project(tmp_path: Path):
     assert first["review_no"] == 1
     assert second["review_no"] == 2
     assert other["review_no"] == 1
+
+
+def test_update_review_job_tracks_progress_stage(tmp_path: Path):
+    db_path = tmp_path / "app.db"
+    db.init_db(db_path)
+    with db.db_session(db_path) as conn:
+        project_id = db.create_project(conn, "项目一")
+        job_id = db.create_review_job(conn, project_id, "技术标预审")
+        db.update_review_job(
+            conn,
+            job_id,
+            status="running",
+            stage="Hermes 正在检索技术标证据",
+            progress=35,
+        )
+        job = db.get_review_job(conn, job_id)
+
+    assert job["status"] == "running"
+    assert job["stage"] == "Hermes 正在检索技术标证据"
+    assert job["progress"] == 35

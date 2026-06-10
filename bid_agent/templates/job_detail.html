@@ -1,15 +1,13 @@
 {% extends "base.html" %}
-{% block title %}任务 {{ job.id }} | 标书预审{% endblock %}
-{% block head %}
-{% if job.status in ["queued", "running"] %}
-<meta http-equiv="refresh" content="4">
-{% endif %}
-{% endblock %}
+{% block title %}任务 {{ job.id }} | 标书智能评审{% endblock %}
 {% block content %}
-<section class="page-head">
+<section class="page-head" data-job-id="{{ job.id }}">
   <div>
     <h1>{{ job.title }}</h1>
-    <p>{{ job.project_name }} · 第 {{ job.review_no }} 次 · <span class="status {{ job.status }}">{{ job.status }}</span></p>
+    <p>
+      {{ job.project_name }} · 第 {{ job.review_no }} 次 ·
+      <span class="status {{ job.status }}" data-job-field="status">{{ job.status }}</span>
+    </p>
   </div>
   <div class="actions">
     {% if report_dir %}
@@ -28,21 +26,32 @@
 {% endif %}
 
 <section class="panel">
-  <h2>预审报告</h2>
+  <h2>Hermes 工作进度</h2>
+  <div class="progress-bar large" aria-label="评审进度">
+    <span data-job-field="progress_bar" style="width: {{ job.progress or 0 }}%"></span>
+  </div>
+  <p class="path-line" data-job-field="stage">
+    {{ job.progress or 0 }}% · {{ job.stage or "等待 Hermes Agent 启动" }}
+  </p>
+</section>
+
+<section class="panel">
+  <h2>智能预审报告</h2>
   {% if report_text %}
   {% if report_dir %}
   <p class="path-line">报告目录：{{ report_dir }}</p>
   {% endif %}
-  <pre class="report">{{ report_text }}</pre>
+  <pre class="report" data-job-field="report">{{ report_text }}</pre>
   {% else %}
-  <p class="empty">报告生成中</p>
+  <p class="empty" data-job-field="report_empty">报告生成中</p>
+  <pre class="report hidden" data-job-field="report"></pre>
   {% endif %}
 </section>
 
 <section class="grid two">
   <div class="panel">
     <h2>运行日志</h2>
-    <pre class="log">{{ job.log_text }}</pre>
+    <pre class="log" data-job-field="log">{{ job.log_text }}</pre>
   </div>
   <div class="panel">
     <h2>产物</h2>
@@ -58,11 +67,42 @@
     </table>
   </div>
 </section>
+<script>
+(() => {
+  const jobId = {{ job.id }};
+  const activeStatuses = new Set(["queued", "running"]);
 
-{% if prompt_text %}
-<section class="panel">
-  <h2>Hermes Prompt</h2>
-  <pre class="log">{{ prompt_text }}</pre>
-</section>
-{% endif %}
+  function setStatus(element, value) {
+    if (!element) return;
+    element.className = `status ${value || ""}`;
+    element.textContent = value || "pending";
+  }
+
+  async function refreshJobStatus() {
+    const response = await fetch(`/api/jobs/${jobId}/status`, { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json();
+    const job = payload.job;
+    setStatus(document.querySelector('[data-job-field="status"]'), job.status);
+    const bar = document.querySelector('[data-job-field="progress_bar"]');
+    if (bar) bar.style.width = `${job.progress || 0}%`;
+    const stage = document.querySelector('[data-job-field="stage"]');
+    if (stage) stage.textContent = `${job.progress || 0}% · ${job.stage || "等待 Hermes Agent 启动"}`;
+    const log = document.querySelector('[data-job-field="log"]');
+    if (log) log.textContent = job.log_text || "";
+    const report = document.querySelector('[data-job-field="report"]');
+    const empty = document.querySelector('[data-job-field="report_empty"]');
+    if (report && payload.report_text) {
+      report.textContent = payload.report_text;
+      report.classList.remove("hidden");
+      if (empty) empty.classList.add("hidden");
+    }
+    if (activeStatuses.has(job.status)) {
+      window.setTimeout(refreshJobStatus, 3000);
+    }
+  }
+
+  window.setTimeout(refreshJobStatus, 800);
+})();
+</script>
 {% endblock %}

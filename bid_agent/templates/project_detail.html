@@ -7,12 +7,15 @@
     <p>{{ project.owner or "未设置负责人" }} · {{ project.status }}</p>
   </div>
   <form method="post" action="/projects/{{ project.id }}/review">
-    <button class="primary" type="submit">启动 Hermes 预审</button>
+    <button class="primary" type="submit">启动 Hermes 智能预审</button>
+  </form>
+  <form method="post" action="/projects/{{ project.id }}/vector-index">
+    <button type="submit">重建向量库</button>
   </form>
 </section>
 
 <section class="panel">
-  <h2>上传文件</h2>
+  <h2>上传资料</h2>
   <form class="upload-form" method="post" action="/projects/{{ project.id }}/documents" enctype="multipart/form-data">
     <input type="file" name="file" required>
     <select name="category">
@@ -21,32 +24,47 @@
       {% endfor %}
     </select>
     <input name="title" placeholder="显示名称">
-    <button type="submit">入库</button>
+    <button type="submit">解析入库</button>
   </form>
 </section>
 
 <section class="grid two">
   <div>
-    <h2>项目文件</h2>
+    <h2>项目资料</h2>
     <table>
       <thead>
-        <tr><th>名称</th><th>类型</th><th>抽取</th><th>OCR</th><th>操作</th></tr>
+        <tr><th>名称</th><th>类型</th><th>解析</th><th>进度</th><th>向量</th><th>引擎</th><th>操作</th></tr>
       </thead>
       <tbody>
         {% for doc in documents %}
-        <tr>
+        <tr data-doc-row="{{ doc.id }}">
           <td><a href="/documents/{{ doc.id }}">{{ doc.title }}</a></td>
           <td>{{ doc.category }}</td>
-          <td><span class="status {{ doc.extraction_status }}">{{ doc.extraction_status }}</span></td>
-          <td>{{ doc.ocr_status }}</td>
+          <td><span class="status {{ doc.extraction_status }}" data-doc-field="extraction_status">{{ doc.extraction_status }}</span></td>
+          <td class="progress-cell">
+            <div class="progress-bar" aria-label="解析进度">
+              <span data-doc-field="parse_bar" style="width: {{ doc.parse_progress or 0 }}%"></span>
+            </div>
+            <div class="progress-meta" data-doc-field="parse_text">
+              {{ doc.parse_progress or 0 }}% · {{ doc.parse_stage or "等待解析" }}
+              {% if doc.parse_total_pages %}
+              · {{ doc.parse_current_page or 0 }}/{{ doc.parse_total_pages }} 页
+              {% endif %}
+              {% if doc.parse_strategy %}
+              · {{ doc.parse_strategy }}
+              {% endif %}
+            </div>
+          </td>
+          <td><span class="status {{ doc.vector_status }}" data-doc-field="vector_status">{{ doc.vector_status }}</span></td>
+          <td data-doc-field="parser_engine">{{ doc.parser_engine or doc.parse_strategy or "pending" }}</td>
           <td>
-            <form method="post" action="/documents/{{ doc.id }}/reextract">
-              <button type="submit">重新抽取</button>
+            <form method="post" action="/documents/{{ doc.id }}/reparse">
+              <button type="submit">重新解析</button>
             </form>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="empty">暂无文件</td></tr>
+        <tr><td colspan="7" class="empty">暂无资料</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -72,4 +90,48 @@
     </table>
   </div>
 </section>
+<script>
+(() => {
+  const projectId = {{ project.id }};
+  const activeStatuses = new Set(["queued", "running"]);
+
+  function setStatus(element, value) {
+    if (!element) return;
+    element.className = `status ${value || ""}`;
+    element.textContent = value || "pending";
+  }
+
+  function progressText(doc) {
+    const stage = doc.parse_stage || "等待解析";
+    const pages = doc.parse_total_pages ? ` · ${doc.parse_current_page || 0}/${doc.parse_total_pages} 页` : "";
+    const strategy = doc.parse_strategy ? ` · ${doc.parse_strategy}` : "";
+    return `${doc.parse_progress || 0}% · ${stage}${pages}${strategy}`;
+  }
+
+  async function refreshDocumentStatus() {
+    const response = await fetch(`/api/projects/${projectId}/documents/status`, { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json();
+    let keepPolling = false;
+    for (const doc of payload.documents || []) {
+      const row = document.querySelector(`[data-doc-row="${doc.id}"]`);
+      if (!row) continue;
+      setStatus(row.querySelector('[data-doc-field="extraction_status"]'), doc.extraction_status);
+      setStatus(row.querySelector('[data-doc-field="vector_status"]'), doc.vector_status);
+      const bar = row.querySelector('[data-doc-field="parse_bar"]');
+      if (bar) bar.style.width = `${doc.parse_progress || 0}%`;
+      const text = row.querySelector('[data-doc-field="parse_text"]');
+      if (text) text.textContent = progressText(doc);
+      const engine = row.querySelector('[data-doc-field="parser_engine"]');
+      if (engine) engine.textContent = doc.parser_engine || doc.parse_strategy || "pending";
+      if (activeStatuses.has(doc.extraction_status) || activeStatuses.has(doc.vector_status)) {
+        keepPolling = true;
+      }
+    }
+    if (keepPolling) window.setTimeout(refreshDocumentStatus, 2000);
+  }
+
+  window.setTimeout(refreshDocumentStatus, 500);
+})();
+</script>
 {% endblock %}

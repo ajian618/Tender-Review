@@ -27,14 +27,12 @@ def _command_parts(command: str) -> list[str]:
     return [resolved, *parts[1:]]
 
 
-def run_hermes_prompt(
-    *,
-    settings: Settings,
-    prompt: str,
-    workdir: Path,
-) -> HermesResult:
-    parts = [*_command_parts(settings.hermes_command), "-z", prompt]
+def run_hermes_agent_task(*, settings: Settings, task: str, workdir: Path) -> HermesResult:
+    parts = [*_command_parts(settings.hermes_command), "-z", task]
     env = os.environ.copy()
+    env.setdefault("BID_AGENT_BASE_URL", settings.app_base_url)
+    if settings.agent_tool_token:
+        env.setdefault("AGENT_TOOL_TOKEN", settings.agent_tool_token)
     completed = subprocess.run(
         parts,
         cwd=workdir,
@@ -46,68 +44,52 @@ def run_hermes_prompt(
         timeout=settings.hermes_timeout_seconds,
         check=False,
     )
-    display = " ".join([parts[0], "-z", "<prompt>"])
     return HermesResult(
         ok=completed.returncode == 0 and bool(completed.stdout.strip()),
         stdout=completed.stdout.strip(),
         stderr=completed.stderr.strip(),
         returncode=completed.returncode,
-        command_display=display,
+        command_display=" ".join([parts[0], "-z", "<agent-task>"]),
     )
 
 
-def build_review_prompt(
-    *,
-    project_name: str,
-    documents: list[dict[str, object]],
-    evidence: list[dict[str, object]],
-) -> str:
-    doc_lines = []
-    for doc in documents:
-        doc_lines.append(
-            "- "
-            f"id={doc['id']} category={doc['category']} title={doc['title']} "
-            f"file={doc['original_filename']} extraction={doc['extraction_status']} "
-            f"ocr={doc['ocr_status']}"
-        )
+def build_agent_review_task(*, project_id: int, project_name: str, job_id: int) -> str:
+    return f"""你是运行在公司电脑上的 Hermes 技术标评审专家。
 
-    evidence_lines = []
-    for index, item in enumerate(evidence[:80], start=1):
-        source = item.get("title") or item.get("original_filename")
-        page = item.get("page_number") or ""
-        sheet = item.get("sheet_name") or ""
-        location = f"page={page}" if page else f"sheet={sheet}" if sheet else f"chunk={item.get('chunk_index')}"
-        text = str(item.get("text", "")).strip()
-        if len(text) > 900:
-            text = text[:900].rstrip() + "\n[证据片段已截断，完整原文在资料库文件详情页]"
-        evidence_lines.append(
-            f"### Evidence {index}\n"
-            f"- source: {source}\n"
-            f"- category: {item.get('category')}\n"
-            f"- location: {location}\n"
-            f"- matched_query: {item.get('query', '')}\n"
-            f"- text:\n{text}\n"
-        )
+当前系统只做技术标预评审。技术标满分固定为 25 分。资信、资格、商务报价、信用、业绩真实性和外部核验暂时全部假设为理想状态，不展开评价，不写长篇说明。
 
-    return f"""你是一个用于工程投标文件预审的 Hermes Agent 工作流执行者。
+你必须作为智能体工作：不要要求用户把资料贴给你，也不要等待人工给你证据。你要主动调用本地 bid-review MCP 工具检索资料库和向量库，找出招标文件中的技术评分办法，并对投标文件中的技术响应进行拟定打分。
 
-项目名称：{project_name}
+项目：
+- project_id: {project_id}
+- project_name: {project_name}
+- review_job_id: {job_id}
 
-目标：基于系统提供的文件清单和候选原文证据，输出一份可给人工复核使用的预审报告。
+必须执行的工作流：
+1. 调用 bid_get_project 了解项目、文件分类、解析状态和向量状态。
+2. 如发现向量库未建好或证据检索为空，调用 bid_rebuild_vector_index。
+3. 必须多次调用 bid_search_evidence，不要只读文件清单后直接写报告。
+4. 优先检索并识别招标文件中的技术标评分办法、技术方案要求、施工组织设计要求、质量/安全/进度/资源配置/重难点措施等技术评审项。
+5. 围绕每个技术评审项检索投标文件响应，形成“评分项 -> 投标响应 -> 证据引用 -> 拟扣分”的证据链。
+6. 必须给出技术标拟定总分，格式为 `技术标拟定得分：X/25`。除非完全没有技术标材料，否则不得只写“无法计算”。
+7. 如果招标文件中明确列出技术评分分项，按原分项表打分；如果分项权重不完整，将识别到的技术要求归并为 25 分制分项，并说明这是预评分归并口径。
+8. 每个扣分点都必须引用工具返回的文件名、页码/块号/片段位置；没有证据就写“当前材料未见证据”，并在该项谨慎扣分。
+9. 资信、资格、商务报价、信用、业绩真实性、证书真伪、社保和外部平台核验只在“本次评审假设”中用一句话说明为理想状态/暂不评价，不得展开成章节。
+10. 生成最终 Markdown 报告后，调用 bid_save_review_report 保存报告，job_id 使用 {job_id}。
 
-严格要求：
-1. 只依据候选证据中的原文，不要用常识补全。
-2. 所有结论必须给出来源文件和页码/表格/片段位置。
-3. 招标评分规则、资格要求、技术要求、商务要求需要分开说明。
-4. 投标文件或资料库中未见证据的项目，得分写 0 或“无法计算”，原因写“当前材料未见证据”。
-5. 商务报价评分缺少投标报价、最高投标限价、平均报价、评标基准价、其他投标人报价等参数时，不得编造分数。
-6. 技术评分如属于专家主观打分，只能输出“AI 预评估”，并明确不是正式专家评分。
-7. 输出必须包含：资格核查、评分项名称、满分、得分、扣分/无法计算原因、引用依据、总分、风险提示、是否建议进入下一轮人工复核。
-8. 输出 Markdown。
+报告必须简洁，避免套话。只包含以下章节：
+1. `# 技术标预评审结论`
+   - 第一行必须写：`技术标拟定得分：X/25`
+   - 一句话说明主要扣分原因。
+2. `## 技术评分表`
+   - 表格列：`评审项 | 满分 | 拟得分 | 扣分 | 证据/依据`
+   - 总分必须汇总为 25 分。
+3. `## 主要扣分依据`
+   - 只列有实际扣分或证据不足的项，逐条引用文件名和页码/块号。
+4. `## 需人工复核`
+   - 只列技术方案里 OCR/图表/关键承诺不清楚的内容。
+5. `## 本次评审假设`
+   - 固定写：`本次仅评价技术标；资信、资格、商务报价、信用等非技术标因素暂按理想状态处理。`
 
-文件清单：
-{chr(10).join(doc_lines) if doc_lines else "无文件"}
-
-候选原文证据：
-{chr(10).join(evidence_lines) if evidence_lines else "无候选证据"}
+最终回答只输出保存后的报告摘要和报告路径，不要输出内部思考过程。
 """

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any
+from typing import Any, Callable
 
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import (
@@ -50,21 +50,17 @@ def embed_texts(settings: Settings, texts: list[str]) -> list[list[float]]:
     return [vector.tolist() for vector in model.embed(texts)]
 
 
-def index_document(conn, *, settings: Settings, document_id: int) -> int:
-    if not settings.vector_enabled:
-        db.update_document_vector_status(conn, document_id, vector_status="disabled")
-        return 0
-    document = db.get_document(conn, document_id)
-    if document is None:
-        raise ValueError(f"Document not found: {document_id}")
-    chunks = db.list_document_chunks(conn, document_id, limit=100000)
-    if not chunks:
-        db.update_document_vector_status(conn, document_id, vector_status="empty")
-        return 0
+def _check_cancel(cancel_check: Callable[[], None] | None) -> None:
+    if cancel_check is not None:
+        cancel_check()
 
-    db.update_document_vector_status(conn, document_id, vector_status="running")
-    ensure_collection(settings)
+
+def delete_document_vectors(*, settings: Settings, document_id: int) -> None:
+    if not settings.vector_enabled:
+        return
     client = get_client(settings)
+    if not client.collection_exists(settings.vector_collection):
+        return
     client.delete(
         collection_name=settings.vector_collection,
         points_selector=FilterSelector(
@@ -79,8 +75,34 @@ def index_document(conn, *, settings: Settings, document_id: int) -> int:
         ),
     )
 
+
+def index_document(
+    conn,
+    *,
+    settings: Settings,
+    document_id: int,
+    cancel_check: Callable[[], None] | None = None,
+) -> int:
+    _check_cancel(cancel_check)
+    if not settings.vector_enabled:
+        db.update_document_vector_status(conn, document_id, vector_status="disabled")
+        return 0
+    document = db.get_document(conn, document_id)
+    if document is None:
+        raise ValueError(f"Document not found: {document_id}")
+    chunks = db.list_document_chunks(conn, document_id, limit=100000)
+    if not chunks:
+        db.update_document_vector_status(conn, document_id, vector_status="empty")
+        return 0
+
+    db.update_document_vector_status(conn, document_id, vector_status="running")
+    ensure_collection(settings)
+    delete_document_vectors(settings=settings, document_id=document_id)
+    _check_cancel(cancel_check)
+
     texts = [str(chunk["text"]) for chunk in chunks]
     vectors = embed_texts(settings, texts)
+    _check_cancel(cancel_check)
     points = []
     for chunk, vector in zip(chunks, vectors):
         points.append(
@@ -102,7 +124,10 @@ def index_document(conn, *, settings: Settings, document_id: int) -> int:
                 },
             )
         )
+    _check_cancel(cancel_check)
+    client = get_client(settings)
     client.upsert(collection_name=settings.vector_collection, points=points)
+    _check_cancel(cancel_check)
     db.update_document_vector_status(conn, document_id, vector_status="completed")
     return len(points)
 

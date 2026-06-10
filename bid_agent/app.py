@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from bid_agent import db
 from bid_agent.config import Settings, get_settings
 from bid_agent.document_service import (
+    cancel_document_parse,
     create_document_upload,
     process_document_by_id,
     queue_reparse_document,
@@ -229,7 +230,7 @@ def document_detail(request: Request, document_id: int):
     return templates.TemplateResponse(
         request=request,
         name="document_detail.html",
-        context={"document": document, "chunks": chunks},
+        context={"document": document, "chunks": chunks, "categories": DOCUMENT_CATEGORIES},
     )
 
 
@@ -331,14 +332,43 @@ def agent_save_project_report(project_id: int, payload: dict = Body(...)):
 
 
 @app.post("/documents/{document_id}/reparse", dependencies=[Depends(require_auth)])
-def reparse_document_route(document_id: int, background_tasks: BackgroundTasks):
+def reparse_document_route(
+    document_id: int,
+    background_tasks: BackgroundTasks,
+    category: str | None = Form(None),
+):
     with db.db_session(settings.database_path) as conn:
         document = db.get_document(conn, document_id)
         if document is None:
             return PlainTextResponse("document not found", status_code=404)
-        queue_reparse_document(conn, settings=settings, document_id=document_id)
+        if str(document["extraction_status"]) in {"queued", "running", "cancel_requested"}:
+            return PlainTextResponse(
+                "document is already parsing; stop and clear it before reparsing",
+                status_code=400,
+            )
+        if category:
+            if category not in {value for value, _label in DOCUMENT_CATEGORIES}:
+                return PlainTextResponse("invalid document category", status_code=400)
+            db.update_document_category(conn, document_id, category)
+        try:
+            queue_reparse_document(conn, settings=settings, document_id=document_id)
+        except ValueError as exc:
+            return PlainTextResponse(str(exc), status_code=400)
         project_id = document["project_id"]
     background_tasks.add_task(process_document_by_id, settings, document_id)
+    if project_id:
+        return RedirectResponse(url=f"/projects/{project_id}", status_code=303)
+    return RedirectResponse(url=f"/documents/{document_id}", status_code=303)
+
+
+@app.post("/documents/{document_id}/cancel-parse", dependencies=[Depends(require_auth)])
+def cancel_document_parse_route(document_id: int):
+    with db.db_session(settings.database_path) as conn:
+        document = db.get_document(conn, document_id)
+        if document is None:
+            return PlainTextResponse("document not found", status_code=404)
+        cancel_document_parse(conn, settings=settings, document_id=document_id)
+        project_id = document["project_id"]
     if project_id:
         return RedirectResponse(url=f"/projects/{project_id}", status_code=303)
     return RedirectResponse(url=f"/documents/{document_id}", status_code=303)

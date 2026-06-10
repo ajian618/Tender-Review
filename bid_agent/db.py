@@ -356,7 +356,7 @@ def update_document_parse_progress(
         if extraction_status == "running":
             assignments.append("parse_started_at = COALESCE(parse_started_at, ?)")
             params.append(utc_now())
-        if extraction_status in {"completed", "empty", "failed"}:
+        if extraction_status in {"completed", "empty", "failed", "cancelled"}:
             assignments.append("parse_finished_at = ?")
             params.append(utc_now())
     if parser_engine is not None:
@@ -412,6 +412,73 @@ def update_document_vector_status(
     )
 
 
+def update_document_category(conn: sqlite3.Connection, document_id: int, category: str) -> None:
+    conn.execute(
+        """
+        UPDATE documents
+        SET category = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (category, utc_now(), document_id),
+    )
+
+
+def delete_document_chunks(conn: sqlite3.Connection, document_id: int) -> None:
+    conn.execute("DELETE FROM document_chunks WHERE document_id = ?", (document_id,))
+    conn.execute("DELETE FROM document_fts WHERE document_id = ?", (str(document_id),))
+
+
+def clear_document_parsed_content(
+    conn: sqlite3.Connection,
+    document_id: int,
+    *,
+    vector_status: str = "cleared",
+    vector_error: str = "",
+) -> None:
+    delete_document_chunks(conn, document_id)
+    conn.execute(
+        """
+        UPDATE documents
+        SET parsed_markdown_path = '',
+            parsed_json_path = '',
+            vector_status = ?,
+            vector_error = ?,
+            vector_indexed_at = NULL,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (vector_status, vector_error, utc_now(), document_id),
+    )
+
+
+def mark_document_cancelled(
+    conn: sqlite3.Connection,
+    document_id: int,
+    *,
+    message: str = "已停止解析并清空解析结果",
+) -> None:
+    now = utc_now()
+    conn.execute(
+        """
+        UPDATE documents
+        SET extraction_status = 'cancelled',
+            ocr_status = 'cancelled',
+            parser_engine = '',
+            parse_stage = '解析已停止，已清空',
+            parse_progress = 0,
+            parse_current_page = 0,
+            parse_finished_at = ?,
+            parsed_markdown_path = '',
+            parsed_json_path = '',
+            error_message = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (now, message, now, document_id),
+    )
+
+
 def list_documents(
     conn: sqlite3.Connection,
     *,
@@ -464,8 +531,7 @@ def replace_document_chunks(
     title: str,
     chunks: list[dict[str, Any]],
 ) -> None:
-    conn.execute("DELETE FROM document_chunks WHERE document_id = ?", (document_id,))
-    conn.execute("DELETE FROM document_fts WHERE document_id = ?", (str(document_id),))
+    delete_document_chunks(conn, document_id)
     now = utc_now()
     for index, chunk in enumerate(chunks):
         text = str(chunk["text"]).strip()

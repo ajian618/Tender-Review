@@ -61,6 +61,7 @@ a:hover {
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .page {
@@ -203,6 +204,12 @@ button.primary,
   color: #ffffff;
 }
 
+button.danger,
+.danger {
+  border-color: #d8a7a7;
+  color: var(--danger);
+}
+
 button:hover,
 .button:hover {
   border-color: var(--accent);
@@ -219,6 +226,20 @@ button:hover,
 
 .upload-form {
   grid-template-columns: minmax(220px, 1fr) 160px minmax(160px, 260px) auto;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.inline-action {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .status {
@@ -241,13 +262,15 @@ button:hover,
 
 .status.running,
 .status.queued,
+.status.cancel_requested,
 .status.required,
 .status.empty {
   background: var(--warn-bg);
   color: var(--warn);
 }
 
-.status.failed {
+.status.failed,
+.status.cancelled {
   background: var(--bad-bg);
   color: var(--danger);
 }

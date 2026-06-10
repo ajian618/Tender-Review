@@ -58,9 +58,16 @@
           <td><span class="status {{ doc.vector_status }}" data-doc-field="vector_status">{{ doc.vector_status }}</span></td>
           <td data-doc-field="parser_engine">{{ doc.parser_engine or doc.parse_strategy or "pending" }}</td>
           <td>
-            <form method="post" action="/documents/{{ doc.id }}/reparse">
-              <button type="submit">重新解析</button>
-            </form>
+            <div class="row-actions">
+              <form method="post" action="/documents/{{ doc.id }}/reparse">
+                <button type="submit">重新解析</button>
+              </form>
+              <form method="post" action="/documents/{{ doc.id }}/cancel-parse">
+                <button class="danger" type="submit" data-doc-field="cancel_label">
+                  {% if doc.extraction_status in ["queued", "running", "cancel_requested"] %}停止并清空{% else %}清空解析{% endif %}
+                </button>
+              </form>
+            </div>
           </td>
         </tr>
         {% else %}
@@ -93,7 +100,7 @@
 <script>
 (() => {
   const projectId = {{ project.id }};
-  const activeStatuses = new Set(["queued", "running"]);
+  const activeStatuses = new Set(["queued", "running", "cancel_requested"]);
 
   function setStatus(element, value) {
     if (!element) return;
@@ -124,6 +131,10 @@
       if (text) text.textContent = progressText(doc);
       const engine = row.querySelector('[data-doc-field="parser_engine"]');
       if (engine) engine.textContent = doc.parser_engine || doc.parse_strategy || "pending";
+      const cancelLabel = row.querySelector('[data-doc-field="cancel_label"]');
+      if (cancelLabel) {
+        cancelLabel.textContent = activeStatuses.has(doc.extraction_status) ? "停止并清空" : "清空解析";
+      }
       if (activeStatuses.has(doc.extraction_status) || activeStatuses.has(doc.vector_status)) {
         keepPolling = true;
       }

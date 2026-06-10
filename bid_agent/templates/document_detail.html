@@ -7,8 +7,18 @@
     <p>{{ document.category }} · {{ document.original_filename }}</p>
   </div>
   <div class="actions">
-    <form method="post" action="/documents/{{ document.id }}/reparse">
-      <button type="submit">重新解析</button>
+    <form class="inline-action" method="post" action="/documents/{{ document.id }}/reparse">
+      <select name="category" aria-label="文件类型">
+        {% for value, label in categories %}
+        <option value="{{ value }}" {% if value == document.category %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">按此类型重新解析</button>
+    </form>
+    <form method="post" action="/documents/{{ document.id }}/cancel-parse">
+      <button class="danger" type="submit" data-doc-field="cancel_label">
+        {% if document.extraction_status in ["queued", "running", "cancel_requested"] %}停止并清空{% else %}清空解析{% endif %}
+      </button>
     </form>
     <a class="button" href="/documents">返回资料库</a>
   </div>
@@ -21,11 +31,11 @@
 {% endif %}
 
 <section class="stats">
-  <div><span>解析状态</span><strong>{{ document.extraction_status }}</strong></div>
-  <div><span>解析引擎</span><strong>{{ document.parser_engine or "pending" }}</strong></div>
-  <div><span>解析策略</span><strong>{{ document.parse_strategy or "pending" }}</strong></div>
-  <div><span>解析页码</span><strong>{{ document.parse_current_page or 0 }} / {{ document.parse_total_pages or 0 }}</strong></div>
-  <div><span>向量索引</span><strong>{{ document.vector_status or "pending" }}</strong></div>
+  <div><span>解析状态</span><strong data-doc-field="extraction_status">{{ document.extraction_status }}</strong></div>
+  <div><span>解析引擎</span><strong data-doc-field="parser_engine">{{ document.parser_engine or "pending" }}</strong></div>
+  <div><span>解析策略</span><strong data-doc-field="parse_strategy">{{ document.parse_strategy or "pending" }}</strong></div>
+  <div><span>解析页码</span><strong data-doc-field="parse_pages">{{ document.parse_current_page or 0 }} / {{ document.parse_total_pages or 0 }}</strong></div>
+  <div><span>向量索引</span><strong data-doc-field="vector_status">{{ document.vector_status or "pending" }}</strong></div>
   <div><span>版面/OCR</span><strong>{{ document.ocr_status }}</strong></div>
   <div><span>大小</span><strong>{{ document.byte_size }}</strong></div>
   <div><span>SHA256</span><strong>{{ document.sha256[:12] }}</strong></div>
@@ -76,18 +86,32 @@
 <script>
 (() => {
   const documentId = {{ document.id }};
-  const activeStatuses = new Set(["queued", "running"]);
+  const activeStatuses = new Set(["queued", "running", "cancel_requested"]);
 
   async function refreshDocumentStatus() {
     const response = await fetch(`/api/documents/${documentId}/status`, { cache: "no-store" });
     if (!response.ok) return;
     const doc = (await response.json()).document;
+    const status = document.querySelector('[data-doc-field="extraction_status"]');
+    if (status) status.textContent = doc.extraction_status || "pending";
+    const engine = document.querySelector('[data-doc-field="parser_engine"]');
+    if (engine) engine.textContent = doc.parser_engine || "pending";
+    const strategyText = document.querySelector('[data-doc-field="parse_strategy"]');
+    if (strategyText) strategyText.textContent = doc.parse_strategy || "pending";
+    const pageText = document.querySelector('[data-doc-field="parse_pages"]');
+    if (pageText) pageText.textContent = `${doc.parse_current_page || 0} / ${doc.parse_total_pages || 0}`;
+    const vectorText = document.querySelector('[data-doc-field="vector_status"]');
+    if (vectorText) vectorText.textContent = doc.vector_status || "pending";
     const bar = document.querySelector('[data-doc-field="parse_bar"]');
     if (bar) bar.style.width = `${doc.parse_progress || 0}%`;
     const pages = doc.parse_total_pages ? ` · ${doc.parse_current_page || 0}/${doc.parse_total_pages} 页` : "";
     const strategy = doc.parse_strategy ? ` · ${doc.parse_strategy}` : "";
     const text = document.querySelector('[data-doc-field="parse_text"]');
     if (text) text.textContent = `${doc.parse_progress || 0}% · ${doc.parse_stage || "等待解析"}${pages}${strategy}`;
+    const cancelLabel = document.querySelector('[data-doc-field="cancel_label"]');
+    if (cancelLabel) {
+      cancelLabel.textContent = activeStatuses.has(doc.extraction_status) ? "停止并清空" : "清空解析";
+    }
     if (activeStatuses.has(doc.extraction_status) || activeStatuses.has(doc.vector_status)) {
       window.setTimeout(refreshDocumentStatus, 2000);
     }

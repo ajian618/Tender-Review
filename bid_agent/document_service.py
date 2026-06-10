@@ -9,7 +9,15 @@ from bid_agent import db
 from bid_agent.config import Settings
 from bid_agent.parsers import chunks_to_dicts, parse_document, parse_result_to_json
 from bid_agent.storage import store_original, write_json_artifact, write_text_artifact
-from bid_agent.vector_store import index_document
+from bid_agent.vector_store import delete_document_vectors, index_document
+
+
+ACTIVE_PARSE_STATUSES = {"queued", "running", "cancel_requested"}
+REQUESTED_CANCEL_STATUSES = {"cancel_requested", "cancelled"}
+
+
+class DocumentParseCancelled(RuntimeError):
+    """Raised inside the background worker when a user stops a parse job."""
 
 
 def ingest_document(
@@ -90,6 +98,9 @@ def process_document_by_id(settings: Settings, document_id: int) -> None:
         document = db.get_document(conn, document_id)
         if document is None:
             raise ValueError(f"Document not found: {document_id}")
+        if str(document["extraction_status"]) in REQUESTED_CANCEL_STATUSES:
+            _finalize_document_cancel(conn, settings=settings, document=document)
+            return
         _parse_and_index_document(conn, settings=settings, document=document, commit_progress=True)
 
 
@@ -108,6 +119,7 @@ def _parse_and_index_document(
     stored_path = Path(str(document["stored_path"]))
 
     try:
+        _raise_if_cancel_requested(conn, document_id)
         db.update_document_parse_progress(
             conn,
             document_id,
@@ -122,12 +134,14 @@ def _parse_and_index_document(
             conn.commit()
 
         def progress_callback(payload: dict[str, Any]) -> None:
+            _raise_if_cancel_requested(conn, document_id)
             _write_parse_progress(
                 conn,
                 document_id=document_id,
                 payload=payload,
                 commit_progress=commit_progress,
             )
+            _raise_if_cancel_requested(conn, document_id)
 
         result = parse_document(
             stored_path,
@@ -136,6 +150,7 @@ def _parse_and_index_document(
             category=category,
             progress_callback=progress_callback,
         )
+        _raise_if_cancel_requested(conn, document_id)
         markdown_path = write_text_artifact(
             settings.storage_dir,
             "parsed",
@@ -152,6 +167,7 @@ def _parse_and_index_document(
                 result=result,
             ),
         )
+        _raise_if_cancel_requested(conn, document_id)
         db.update_document_parse_progress(
             conn,
             document_id,
@@ -169,6 +185,7 @@ def _parse_and_index_document(
             title=title,
             chunks=chunks_to_dicts(result.chunks),
         )
+        _raise_if_cancel_requested(conn, document_id)
         db.update_document_extraction(
             conn,
             document_id,
@@ -187,14 +204,22 @@ def _parse_and_index_document(
                 parse_stage="向量索引中",
                 parse_progress=95,
             )
-            index_document(conn, settings=settings, document_id=document_id)
+            index_document(
+                conn,
+                settings=settings,
+                document_id=document_id,
+                cancel_check=lambda: _raise_if_cancel_requested(conn, document_id),
+            )
         except Exception as exc:
+            if isinstance(exc, DocumentParseCancelled):
+                raise
             db.update_document_vector_status(
                 conn,
                 document_id,
                 vector_status="failed",
                 vector_error=str(exc),
             )
+        _raise_if_cancel_requested(conn, document_id)
         db.update_document_parse_progress(
             conn,
             document_id,
@@ -203,6 +228,10 @@ def _parse_and_index_document(
             parse_stage="解析和向量索引完成",
             parse_progress=100,
         )
+    except DocumentParseCancelled:
+        _finalize_document_cancel(conn, settings=settings, document=document)
+        if commit_progress:
+            conn.commit()
     except Exception as exc:
         db.update_document_extraction(
             conn,
@@ -234,6 +263,9 @@ def reparse_document(
     document = db.get_document(conn, document_id)
     if document is None:
         raise ValueError(f"Document not found: {document_id}")
+    if str(document["extraction_status"]) in ACTIVE_PARSE_STATUSES:
+        raise ValueError("Document is already parsing. Stop and clear it before reparsing.")
+    _clear_document_outputs(conn, settings=settings, document=document)
     db.update_document_extraction(
         conn,
         document_id,
@@ -283,6 +315,9 @@ def queue_reparse_document(conn: sqlite3.Connection, *, settings: Settings, docu
     document = db.get_document(conn, document_id)
     if document is None:
         raise ValueError(f"Document not found: {document_id}")
+    if str(document["extraction_status"]) in ACTIVE_PARSE_STATUSES:
+        raise ValueError("Document is already parsing. Stop and clear it before reparsing.")
+    _clear_document_outputs(conn, settings=settings, document=document)
     path = Path(str(document["stored_path"]))
     db.update_document_parse_progress(
         conn,
@@ -297,6 +332,28 @@ def queue_reparse_document(conn: sqlite3.Connection, *, settings: Settings, docu
         error_message="",
     )
     db.update_document_vector_status(conn, document_id, vector_status="pending", vector_error="")
+
+
+def cancel_document_parse(conn: sqlite3.Connection, *, settings: Settings, document_id: int) -> None:
+    document = db.get_document(conn, document_id)
+    if document is None:
+        raise ValueError(f"Document not found: {document_id}")
+
+    _clear_document_outputs(conn, settings=settings, document=document)
+    current_status = str(document["extraction_status"])
+    if current_status == "running":
+        db.update_document_parse_progress(
+            conn,
+            document_id,
+            extraction_status="cancel_requested",
+            parse_stage="已请求停止，正在等待当前解析步骤结束",
+            error_message="用户停止解析并清空结果",
+        )
+    else:
+        _finalize_document_cancel(conn, settings=settings, document=document)
+
+    if document["project_id"]:
+        db.touch_project(conn, int(document["project_id"]))
 
 
 def _write_parse_progress(
@@ -318,6 +375,62 @@ def _write_parse_progress(
     )
     if commit_progress:
         conn.commit()
+
+
+def _raise_if_cancel_requested(conn: sqlite3.Connection, document_id: int) -> None:
+    row = conn.execute(
+        "SELECT extraction_status FROM documents WHERE id = ?",
+        (document_id,),
+    ).fetchone()
+    if row is not None and str(row["extraction_status"]) in REQUESTED_CANCEL_STATUSES:
+        raise DocumentParseCancelled(f"Document parse cancelled: {document_id}")
+
+
+def _finalize_document_cancel(
+    conn: sqlite3.Connection,
+    *,
+    settings: Settings,
+    document: dict[str, Any],
+) -> None:
+    _clear_document_outputs(conn, settings=settings, document=document)
+    db.mark_document_cancelled(conn, int(document["id"]))
+
+
+def _clear_document_outputs(
+    conn: sqlite3.Connection,
+    *,
+    settings: Settings,
+    document: dict[str, Any],
+) -> None:
+    document_id = int(document["id"])
+    _delete_parse_artifact(settings, str(document.get("parsed_markdown_path") or ""))
+    _delete_parse_artifact(settings, str(document.get("parsed_json_path") or ""))
+    vector_error = ""
+    try:
+        delete_document_vectors(settings=settings, document_id=document_id)
+    except Exception as exc:
+        vector_error = str(exc)
+    db.clear_document_parsed_content(
+        conn,
+        document_id,
+        vector_status="failed" if vector_error else "cleared",
+        vector_error=vector_error,
+    )
+
+
+def _delete_parse_artifact(settings: Settings, raw_path: str) -> None:
+    if not raw_path.strip():
+        return
+    try:
+        path = Path(raw_path)
+        resolved = path.resolve()
+        storage_root = settings.storage_dir.resolve()
+    except OSError:
+        return
+    if resolved == storage_root or storage_root not in resolved.parents:
+        return
+    if resolved.exists() and resolved.is_file():
+        resolved.unlink()
 
 
 def describe_parse_strategy(category: str, suffix: str) -> str:

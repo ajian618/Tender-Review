@@ -33,7 +33,6 @@ class Settings:
     storage_dir: Path
     reports_dir: Path
     database_url: str
-    hermes_command: str
     document_parser: str
     document_language: str
     vector_enabled: bool
@@ -41,9 +40,6 @@ class Settings:
     vector_collection: str
     embedding_model: str
     embedding_dim: int
-    agent_tool_token: str
-    app_base_url: str
-    hermes_timeout_seconds: int
 
     @property
     def database_path(self) -> Path:
@@ -67,7 +63,6 @@ def get_settings() -> Settings:
         storage_dir=storage_dir,
         reports_dir=reports_dir,
         database_url=os.getenv("DATABASE_URL", f"sqlite:///{storage_dir / 'app.db'}"),
-        hermes_command=os.getenv("HERMES_COMMAND", "hermes"),
         document_parser=os.getenv("DOCUMENT_PARSER", "paddle_structure"),
         document_language=os.getenv("DOCUMENT_LANGUAGE", "ch"),
         vector_enabled=_bool_env("VECTOR_ENABLED", True),
@@ -75,7 +70,4 @@ def get_settings() -> Settings:
         vector_collection=os.getenv("VECTOR_COLLECTION", "bid_documents"),
         embedding_model=os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5"),
         embedding_dim=int(os.getenv("EMBEDDING_DIM", "512")),
-        agent_tool_token=os.getenv("AGENT_TOOL_TOKEN", ""),
-        app_base_url=os.getenv("APP_BASE_URL", "http://127.0.0.1:8000"),
-        hermes_timeout_seconds=int(os.getenv("HERMES_TIMEOUT_SECONDS", "900")),
     )

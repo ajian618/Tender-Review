@@ -134,6 +134,19 @@ def init_db(database_path: Path) -> None:
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS agent_lessons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope TEXT NOT NULL DEFAULT 'general',
+                title TEXT NOT NULL,
+                lesson TEXT NOT NULL,
+                tags TEXT NOT NULL DEFAULT '',
+                source TEXT NOT NULL DEFAULT '',
+                project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+                document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
@@ -841,5 +854,99 @@ def list_review_artifacts(conn: sqlite3.Connection, job_id: int) -> list[dict[st
         ORDER BY created_at ASC, id ASC
         """,
         (job_id,),
+    ).fetchall()
+    return rows_to_dicts(rows)
+
+
+def create_agent_lesson(
+    conn: sqlite3.Connection,
+    *,
+    title: str,
+    lesson: str,
+    scope: str = "general",
+    tags: str = "",
+    source: str = "",
+    project_id: int | None = None,
+    document_id: int | None = None,
+) -> int:
+    now = utc_now()
+    cur = conn.execute(
+        """
+        INSERT INTO agent_lessons (
+            scope, title, lesson, tags, source, project_id, document_id,
+            created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            scope.strip() or "general",
+            title.strip() or "未命名经验",
+            lesson.strip(),
+            tags.strip(),
+            source.strip(),
+            project_id,
+            document_id,
+            now,
+            now,
+        ),
+    )
+    return int(cur.lastrowid)
+
+
+def get_agent_lesson(conn: sqlite3.Connection, lesson_id: int) -> dict[str, Any] | None:
+    return row_to_dict(conn.execute("SELECT * FROM agent_lessons WHERE id = ?", (lesson_id,)).fetchone())
+
+
+def search_agent_lessons(
+    conn: sqlite3.Connection,
+    query: str = "",
+    *,
+    scope: str = "",
+    project_id: int | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    where_parts: list[str] = []
+    params: list[Any] = []
+
+    cleaned = " ".join(part.strip() for part in query.split() if part.strip())
+    if cleaned:
+        terms = [term.strip() for term in cleaned.split() if term.strip()]
+        for term in terms:
+            where_parts.append(
+                """
+                (
+                    title LIKE ?
+                    OR lesson LIKE ?
+                    OR tags LIKE ?
+                    OR scope LIKE ?
+                    OR source LIKE ?
+                )
+                """
+            )
+            like = f"%{term}%"
+            params.extend([like, like, like, like, like])
+
+    if scope.strip():
+        where_parts.append("scope = ?")
+        params.append(scope.strip())
+
+    if project_id is not None:
+        where_parts.append("(project_id = ? OR project_id IS NULL)")
+        params.append(project_id)
+
+    where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+    params.append(limit)
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM agent_lessons
+        {where_sql}
+        ORDER BY
+            CASE WHEN project_id IS NULL THEN 1 ELSE 0 END,
+            updated_at DESC,
+            id DESC
+        LIMIT ?
+        """,
+        tuple(params),
     ).fetchall()
     return rows_to_dicts(rows)

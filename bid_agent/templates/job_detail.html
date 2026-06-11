@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}任务 {{ job.id }} | 标书智能评审{% endblock %}
+{% block title %}任务 {{ job.id }} | 标书资料后台{% endblock %}
 {% block content %}
 <section class="page-head" data-job-id="{{ job.id }}">
   <div>
@@ -26,24 +26,24 @@
 {% endif %}
 
 <section class="panel">
-  <h2>Hermes 工作进度</h2>
+  <h2>Hermes 任务进度</h2>
   <div class="progress-bar large" aria-label="评审进度">
     <span data-job-field="progress_bar" style="width: {{ job.progress or 0 }}%"></span>
   </div>
   <p class="path-line" data-job-field="stage">
-    {{ job.progress or 0 }}% · {{ job.stage or "等待 Hermes Agent 启动" }}
+    {{ job.progress or 0 }}% · {{ job.stage or "等待 Hermes 更新" }}
   </p>
 </section>
 
 <section class="panel">
-  <h2>智能预审报告</h2>
+  <h2>Hermes 报告</h2>
   {% if report_text %}
   {% if report_dir %}
   <p class="path-line">报告目录：{{ report_dir }}</p>
   {% endif %}
   <pre class="report" data-job-field="report">{{ report_text }}</pre>
   {% else %}
-  <p class="empty" data-job-field="report_empty">报告生成中</p>
+  <p class="empty" data-job-field="report_empty">暂无报告</p>
   <pre class="report hidden" data-job-field="report"></pre>
   {% endif %}
 </section>
@@ -87,7 +87,7 @@
     const bar = document.querySelector('[data-job-field="progress_bar"]');
     if (bar) bar.style.width = `${job.progress || 0}%`;
     const stage = document.querySelector('[data-job-field="stage"]');
-    if (stage) stage.textContent = `${job.progress || 0}% · ${job.stage || "等待 Hermes Agent 启动"}`;
+    if (stage) stage.textContent = `${job.progress || 0}% · ${job.stage || "等待 Hermes 更新"}`;
     const log = document.querySelector('[data-job-field="log"]');
     if (log) log.textContent = job.log_text || "";
     const report = document.querySelector('[data-job-field="report"]');

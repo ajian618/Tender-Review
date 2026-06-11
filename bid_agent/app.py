@@ -7,7 +7,7 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Body, Depends, FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -20,9 +20,8 @@ from bid_agent.document_service import (
     process_document_by_id,
     queue_reparse_document,
 )
-from bid_agent.review import ReviewWorkflow
-from bid_agent.storage import ensure_project_report_dir, ensure_storage_dirs, write_project_report_artifact
-from bid_agent.vector_store import index_project, search_project
+from bid_agent.storage import ensure_project_report_dir, ensure_storage_dirs
+from bid_agent.vector_store import index_project
 
 COOKIE_NAME = "bid_agent_session"
 
@@ -52,14 +51,6 @@ def require_auth(request: Request) -> None:
         raise AuthRedirect()
 
 
-def require_tool_auth(request: Request) -> None:
-    if not settings.agent_tool_token:
-        return
-    token = request.headers.get("x-agent-tool-token", "")
-    if not hmac.compare_digest(token, settings.agent_tool_token):
-        raise HTTPException(status_code=403, detail="agent tool token invalid")
-
-
 class AuthRedirect(Exception):
     pass
 
@@ -79,7 +70,7 @@ async def lifespan(fastapi_app: FastAPI):
     yield
 
 
-app = FastAPI(title="标书 Hermes Agent 智能评审系统", lifespan=lifespan)
+app = FastAPI(title="标书资料后台", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
 
@@ -234,23 +225,6 @@ def document_detail(request: Request, document_id: int):
     )
 
 
-@app.get("/api/agent/projects", dependencies=[Depends(require_tool_auth)])
-def agent_list_projects():
-    with db.db_session(settings.database_path) as conn:
-        return {"projects": db.list_projects(conn)}
-
-
-@app.get("/api/agent/projects/{project_id}", dependencies=[Depends(require_tool_auth)])
-def agent_get_project(project_id: int):
-    with db.db_session(settings.database_path) as conn:
-        project = db.get_project(conn, project_id)
-        if project is None:
-            raise HTTPException(status_code=404, detail="project not found")
-        documents = db.list_documents(conn, project_id=project_id, limit=500)
-        jobs = db.list_review_jobs(conn, project_id=project_id, limit=50)
-        return {"project": project, "documents": documents, "jobs": jobs}
-
-
 @app.get("/api/projects/{project_id}/documents/status", dependencies=[Depends(require_auth)])
 def project_document_status(project_id: int):
     with db.db_session(settings.database_path) as conn:
@@ -268,67 +242,6 @@ def document_status(document_id: int):
         if document is None:
             raise HTTPException(status_code=404, detail="document not found")
         return {"document": _document_status_payload(document)}
-
-
-@app.get("/api/agent/documents/{document_id}/chunks", dependencies=[Depends(require_tool_auth)])
-def agent_get_document_chunks(document_id: int, limit: int = 80):
-    with db.db_session(settings.database_path) as conn:
-        document = db.get_document(conn, document_id)
-        if document is None:
-            raise HTTPException(status_code=404, detail="document not found")
-        return {"document": document, "chunks": db.list_document_chunks(conn, document_id, limit=limit)}
-
-
-@app.get("/api/agent/projects/{project_id}/search", dependencies=[Depends(require_tool_auth)])
-def agent_search_project(project_id: int, q: str, limit: int = 10):
-    try:
-        results = search_project(settings=settings, project_id=project_id, query=q, limit=limit)
-        source = "qdrant"
-    except Exception:
-        with db.db_session(settings.database_path) as conn:
-            results = db.search_chunks(conn, q, project_id=project_id, limit=limit)
-        source = "sqlite_fts"
-    return {"source": source, "query": q, "results": results}
-
-
-@app.post("/api/agent/projects/{project_id}/vector-index", dependencies=[Depends(require_tool_auth)])
-def agent_index_project(project_id: int):
-    with db.db_session(settings.database_path) as conn:
-        project = db.get_project(conn, project_id)
-        if project is None:
-            raise HTTPException(status_code=404, detail="project not found")
-        indexed = index_project(conn, settings=settings, project_id=project_id)
-        return {"project_id": project_id, "indexed_chunks": indexed}
-
-
-@app.post("/api/agent/projects/{project_id}/reports", dependencies=[Depends(require_tool_auth)])
-def agent_save_project_report(project_id: int, payload: dict = Body(...)):
-    title = str(payload.get("title") or "Hermes智能预审报告")
-    markdown = str(payload.get("markdown") or "").strip()
-    job_id = payload.get("job_id")
-    if not markdown:
-        raise HTTPException(status_code=400, detail="markdown is required")
-    with db.db_session(settings.database_path) as conn:
-        project = db.get_project(conn, project_id)
-        if project is None:
-            raise HTTPException(status_code=404, detail="project not found")
-        report_path = write_project_report_artifact(
-            settings.reports_dir,
-            project_id=project_id,
-            project_name=str(project["name"]),
-            filename=f"agent_report_{db.utc_now().replace(':', '').replace('-', '')}.md",
-            text=markdown,
-        )
-        artifact_id = None
-        if job_id:
-            artifact_id = db.create_review_artifact(
-                conn,
-                job_id=int(job_id),
-                artifact_type="report",
-                title=title,
-                stored_path=str(report_path),
-            )
-        return {"stored_path": str(report_path), "artifact_id": artifact_id}
 
 
 @app.post("/documents/{document_id}/reparse", dependencies=[Depends(require_auth)])
@@ -372,17 +285,6 @@ def cancel_document_parse_route(document_id: int):
     if project_id:
         return RedirectResponse(url=f"/projects/{project_id}", status_code=303)
     return RedirectResponse(url=f"/documents/{document_id}", status_code=303)
-
-
-@app.post("/projects/{project_id}/review", dependencies=[Depends(require_auth)])
-def create_review(project_id: int, background_tasks: BackgroundTasks):
-    with db.db_session(settings.database_path) as conn:
-        project = db.get_project(conn, project_id)
-        if project is None:
-            return PlainTextResponse("project not found", status_code=404)
-        job_id = db.create_review_job(conn, project_id, f"{project['name']} 技术标智能预审")
-    background_tasks.add_task(ReviewWorkflow(settings).run, job_id)
-    return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
 
 
 @app.post("/projects/{project_id}/vector-index", dependencies=[Depends(require_auth)])

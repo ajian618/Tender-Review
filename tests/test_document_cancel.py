@@ -18,7 +18,6 @@ def _settings(tmp_path: Path) -> Settings:
         storage_dir=tmp_path / "storage",
         reports_dir=tmp_path / "reports",
         database_url=f"sqlite:///{tmp_path / 'storage' / 'app.db'}",
-        hermes_command="hermes",
         document_parser="paddle_structure",
         document_language="ch",
         vector_enabled=False,
@@ -26,9 +25,6 @@ def _settings(tmp_path: Path) -> Settings:
         vector_collection="bid_documents",
         embedding_model="BAAI/bge-small-zh-v1.5",
         embedding_dim=512,
-        agent_tool_token="",
-        app_base_url="http://127.0.0.1:8000",
-        hermes_timeout_seconds=5,
     )
 
 

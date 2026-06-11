@@ -107,6 +107,11 @@ h2 {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
+.grid.project-workspace {
+  grid-template-columns: minmax(740px, 2fr) minmax(320px, 1fr);
+  align-items: start;
+}
+
 .panel {
   margin-bottom: 20px;
   padding: 18px;
@@ -150,7 +155,6 @@ h2 {
 table {
   width: 100%;
   border-collapse: collapse;
-  overflow-wrap: anywhere;
   background: var(--surface);
 }
 
@@ -233,6 +237,32 @@ button:hover,
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.table-scroll table {
+  border: 0;
+}
+
+.document-table {
+  min-width: 900px;
+}
+
+.doc-title-cell {
+  min-width: 210px;
+  max-width: 300px;
+  overflow-wrap: anywhere;
+}
+
+.engine-cell {
+  min-width: 120px;
+  max-width: 160px;
+  overflow-wrap: anywhere;
 }
 
 .inline-action {
@@ -427,6 +457,7 @@ pre {
   }
 
   .grid.two,
+  .grid.project-workspace,
   .stats {
     grid-template-columns: 1fr;
   }

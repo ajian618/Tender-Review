@@ -106,7 +106,8 @@ print(f"VECTOR_STORE_DIR={settings.vector_store_dir}")
 print(f"VECTOR_COLLECTION={settings.vector_collection}")
 print(f"EMBEDDING_MODEL={settings.embedding_model}")
 print(f"EMBEDDING_DIM={settings.embedding_dim}")
-print(f"APP_BASE_URL={settings.app_base_url}")
+print(f"DATABASE_PATH={settings.database_path}")
+print("MCP_DATA_ACCESS=direct SQLite/Qdrant/agent_lessons")
 
 try:
     import tempfile
@@ -126,16 +127,15 @@ except Exception as exc:
 '@ | & $python @argsPrefix -
 
 Write-Host "`n== Hermes =="
-$hermesCommand = if ($env:HERMES_COMMAND) { $env:HERMES_COMMAND } else { "hermes" }
-& $hermesCommand --version
+& hermes --version
 Write-Host "Hermes config path:"
-& $hermesCommand config path
+& hermes config path
 Write-Host "Hermes env path:"
-& $hermesCommand config env-path
+& hermes config env-path
 Write-Host "Hermes MCP servers:"
-& $hermesCommand mcp list
+& hermes mcp list
 Write-Host "Hermes MCP bid-review test:"
-& $hermesCommand mcp test bid-review
+& hermes mcp test bid-review
 
-Write-Host "`n== App health =="
-Write-Host "Run scripts\run-dev.ps1, then open http://127.0.0.1:8000/health"
+Write-Host "`n== Optional web backend =="
+Write-Host "Only start scripts\run-dev.ps1 when you need upload/parse/cleanup pages. Health URL: http://127.0.0.1:8000/health"

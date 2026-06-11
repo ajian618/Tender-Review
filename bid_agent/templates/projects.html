@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}项目 | 标书预审{% endblock %}
+{% block title %}项目 | 标书资料后台{% endblock %}
 {% block content %}
 <section class="page-head">
   <div>
@@ -20,7 +20,7 @@
       {% for project in projects %}
       <a class="item-card" href="/projects/{{ project.id }}">
         <span class="item-title">{{ project.name }}</span>
-        <span class="item-meta">{{ project.document_count }} 份文件 · {{ project.job_count }} 次评审 · {{ project.updated_at }}</span>
+        <span class="item-meta">{{ project.document_count }} 份文件 · {{ project.job_count }} 个 Hermes 任务 · {{ project.updated_at }}</span>
       </a>
       {% else %}
       <p class="empty">暂无项目</p>
@@ -28,7 +28,7 @@
     </div>
   </div>
   <div>
-    <h2>最近任务</h2>
+    <h2>Hermes 任务记录</h2>
     <table>
       <thead>
         <tr><th>任务</th><th>次数</th><th>状态</th><th>时间</th></tr>

@@ -99,7 +99,7 @@ py -3.12 -m pip install -r requirements.txt
 .\scripts\doctor.ps1
 ```
 
-`register-hermes-mcp.ps1` 会重写 Hermes 的 `bid-review` MCP 配置，把它指向当前项目里的 `scripts\bid-review-mcp.cmd`。这一步就是本次大改涉及的 Hermes 命令行配置更新；一般不需要重新配置 DeepSeek API Key 或 Hermes 默认模型。
+`register-hermes-mcp.ps1` 会重写 Hermes 的 `bid-review` MCP 配置，把它指向当前项目里的 `scripts\bid-review-mcp.cmd`，并把 Hermes `terminal.cwd` 设置为当前项目目录。这一步就是本次大改涉及的 Hermes 命令行配置更新；一般不需要重新配置 DeepSeek API Key 或 Hermes 默认模型。
 
 `install-hermes-default-soul.ps1` 会把项目内的 `config\hermes\default-SOUL.md` 安装到当前 Hermes default profile 的 `SOUL.md`，并自动备份旧文件。它决定飞书/CLI 里的“标书总调度”身份。
 

@@ -37,6 +37,7 @@ foreach ($line in $rawLines) {
 }
 
 $escapedRunner = $runner.Replace("'", "''")
+$escapedRoot = $root.Replace("'", "''")
 $childBlock = @(
   "  bid-review:",
   "    command: '$escapedRunner'",
@@ -98,9 +99,49 @@ if ($mcpIndex -lt 0) {
   }
 }
 
+$terminalIndex = -1
+for ($i = 0; $i -lt $lines.Count; $i++) {
+  if ($lines[$i] -match '^terminal:\s*$') {
+    $terminalIndex = $i
+    break
+  }
+}
+
+$cwdLine = "  cwd: '$escapedRoot'"
+if ($terminalIndex -lt 0) {
+  if ($lines.Count -gt 0 -and $lines[$lines.Count - 1].Trim()) {
+    $lines.Add("")
+  }
+  $lines.Add("terminal:")
+  $lines.Add($cwdLine)
+} else {
+  $terminalEnd = $lines.Count
+  for ($i = $terminalIndex + 1; $i -lt $lines.Count; $i++) {
+    if ($lines[$i] -match '^\S') {
+      $terminalEnd = $i
+      break
+    }
+  }
+
+  $cwdIndex = -1
+  for ($i = $terminalIndex + 1; $i -lt $terminalEnd; $i++) {
+    if ($lines[$i] -match '^  cwd:\s*') {
+      $cwdIndex = $i
+      break
+    }
+  }
+
+  if ($cwdIndex -lt 0) {
+    $lines.Insert($terminalIndex + 1, $cwdLine)
+  } else {
+    $lines[$cwdIndex] = $cwdLine
+  }
+}
+
 $content = ($lines -join [Environment]::NewLine) + [Environment]::NewLine
 [System.IO.File]::WriteAllText($configPath, $content, $Utf8NoBom)
 Write-Host "bid-review MCP registration written without interactive prompts."
+Write-Host "Hermes terminal.cwd set to: $root"
 
 Write-Host "Current Hermes MCP list:"
 & hermes mcp list

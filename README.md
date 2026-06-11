@@ -21,13 +21,14 @@ cd C:\Users\ajian\Documents\标书
 py -3.12 -m pip install -r requirements.txt
 py -3.12 -m pytest -q
 .\scripts\register-hermes-mcp.ps1
+.\scripts\install-hermes-default-soul.ps1
 .\scripts\doctor.ps1
 ```
 
 期望看到：
 
 ```text
-23 passed
+19 passed
 MCP_DATA_ACCESS=direct SQLite/Qdrant/agent_lessons
 Hermes MCP bid-review test: 成功
 Tools discovered: 11
@@ -94,10 +95,13 @@ cd C:\Users\<公司用户名>\Documents\标书
 git pull --ff-only origin main
 py -3.12 -m pip install -r requirements.txt
 .\scripts\register-hermes-mcp.ps1
+.\scripts\install-hermes-default-soul.ps1
 .\scripts\doctor.ps1
 ```
 
 `register-hermes-mcp.ps1` 会重写 Hermes 的 `bid-review` MCP 配置，把它指向当前项目里的 `scripts\bid-review-mcp.cmd`。这一步就是本次大改涉及的 Hermes 命令行配置更新；一般不需要重新配置 DeepSeek API Key 或 Hermes 默认模型。
+
+`install-hermes-default-soul.ps1` 会把项目内的 `config\hermes\default-SOUL.md` 安装到当前 Hermes default profile 的 `SOUL.md`，并自动备份旧文件。它决定飞书/CLI 里的“标书总调度”身份。
 
 如果 `git pull --ff-only origin main` 失败，说明公司电脑目录有本地改动或目录状态混乱。保守处理方式：
 
@@ -110,6 +114,7 @@ py -3.12 -m pip install -r requirements.txt
 Copy-Item .env.example .env
 notepad .env
 .\scripts\register-hermes-mcp.ps1
+.\scripts\install-hermes-default-soul.ps1
 .\scripts\doctor.ps1
 ```
 
